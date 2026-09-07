@@ -51,10 +51,11 @@ public class FloatBallService extends Service {
             if("reload".equals(a)&&ball!=null){
                 // 重建菜单(排序/内容变更热生效)
                 try{ if(menu!=null){ wm.removeView(menu); menu=null; } }catch(Exception e){}
-                menu=new LinearLayout(this); menu.setVisibility(View.GONE);
+                menu=newMenuView();
                 buildMenu();
+                menuLp.height=menuContentHeight();   // 固定像素高,避免WRAP+GONE测量卡在矮高度
                 try{ wm.addView(menu,menuLp); }catch(Exception e){}
-                Log.i("FloatBall","menu reloaded");
+                Log.i("FloatBall","menu reloaded h="+menuLp.height+" rows="+menu.getChildCount());
                 return START_STICKY;
             }
             if(ball==null) createBall();
@@ -106,15 +107,7 @@ public class FloatBallService extends Service {
         try{ wm.addView(ball,ballLp); Log.i("FloatBall","ball added OK"); }catch(Exception e){ Log.e("FloatBall","add ball fail",e);}
 
         // 菜单(初始隐藏, 悬浮球上方)
-        menu=new LinearLayout(this);
-        menu.setOrientation(LinearLayout.VERTICAL);
-        menu.setPadding(dp(6),dp(6),dp(6),dp(6));
-        GradientDrawable mbg=new GradientDrawable();
-        mbg.setCornerRadius(dp(18));
-        mbg.setColor(0xE0223355);
-        mbg.setStroke(dp(1),0x66FFFFFF);
-        menu.setBackground(mbg);
-        menu.setVisibility(View.GONE);
+        menu=newMenuView();
         buildMenu();
         menuLp=new WindowManager.LayoutParams(
             dp(140),WindowManager.LayoutParams.WRAP_CONTENT,
@@ -123,7 +116,36 @@ public class FloatBallService extends Service {
             PixelFormat.TRANSLUCENT);
         menuLp.gravity=Gravity.TOP|Gravity.START;
         menuLp.x=ballLp.x+dp(52); menuLp.y=Math.max(dp(40),ballLp.y-dp(42)*6);
+        menuLp.height=menuContentHeight();   // 固定像素高,避免WRAP+GONE测量卡在矮高度
+        Log.i("FloatBall","createBall menu h="+menuLp.height+" rows="+menu.getChildCount());
         try{ wm.addView(menu,menuLp); Log.i("FloatBall","menu added"); }catch(Exception e){ Log.e("FloatBall","add menu fail",e);}
+    }
+
+    // 新建菜单容器(必须纵向+内边距+圆角背景; 遗漏orientation会横排塌成矮窗口)
+    LinearLayout newMenuView(){
+        LinearLayout m=new LinearLayout(this);
+        m.setOrientation(LinearLayout.VERTICAL);
+        m.setPadding(dp(6),dp(6),dp(6),dp(6));
+        GradientDrawable mbg=new GradientDrawable();
+        mbg.setCornerRadius(dp(18));
+        mbg.setColor(0xE0223355);
+        mbg.setStroke(dp(1),0x66FFFFFF);
+        m.setBackground(mbg);
+        m.setVisibility(View.GONE);
+        return m;
+    }
+
+    // 主动测量菜单内容高度(不受窗口未显示/GONE 影响),用于固定窗口高度
+    int menuContentHeight(){
+        int rows=(menu==null)?0:menu.getChildCount();
+        int fb=dp(16)+rows*dp(48);
+        try{
+            menu.measure(View.MeasureSpec.makeMeasureSpec(dp(140),View.MeasureSpec.EXACTLY),
+                         View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
+            int mh=menu.getMeasuredHeight();
+            if(mh>dp(8)) return mh;
+        }catch(Exception e){}
+        return fb;
     }
 
     // 可排序菜单项 id → 标签/动作
@@ -147,6 +169,7 @@ public class FloatBallService extends Service {
             addActionItem(id);
         }
         addActionItem("close");
+        Log.i("FloatBall","buildMenu items="+menu.getChildCount()+" order="+ord.toString());
     }
     // 读自定义项 label|pkg(第n项)
     String[] customItem(int n){
@@ -201,7 +224,8 @@ public class FloatBallService extends Service {
         menu.setVisibility(show?View.VISIBLE:View.GONE);
         if(show){
             int mw=dp(140);
-            int mh=menu.getChildCount()*dp(48)+dp(16);   // 估算菜单高度
+            int mh=menuLp.height;                 // 窗口实际固定高度
+            if(mh<=0) mh=menu.getChildCount()*dp(48)+dp(16);   // 兜底估算
             if(mh>h-dp(20)) mh=h-dp(20);
             int gx=ballLp.x+dp(46)+dp(8);                 // 默认放球右侧
             int gy=ballLp.y+ballLp.height/2-mh/2;
