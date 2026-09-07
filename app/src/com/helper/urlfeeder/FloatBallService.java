@@ -44,6 +44,16 @@ public class FloatBallService extends Service {
         Log.i("FloatBall","onStartCommand ball="+(ball!=null)+" overlayOk="+FloatBallService.overlayOk(this));
         running=true;
         try{
+            String a=i==null?null:i.getAction();
+            if("reload".equals(a)&&ball!=null){
+                // 重建菜单(排序/内容变更热生效)
+                try{ if(menu!=null){ wm.removeView(menu); menu=null; } }catch(Exception e){}
+                menu=new LinearLayout(this); menu.setVisibility(View.GONE);
+                buildMenu();
+                try{ wm.addView(menu,menuLp); }catch(Exception e){}
+                Log.i("FloatBall","menu reloaded");
+                return START_STICKY;
+            }
             if(ball==null) createBall();
             Log.i("FloatBall","after createBall ball="+(ball!=null));
         }catch(Exception e){ Log.e("FloatBall","start err",e); stopSelf(); }
@@ -102,12 +112,7 @@ public class FloatBallService extends Service {
         mbg.setStroke(dp(1),0x66FFFFFF);
         menu.setBackground(mbg);
         menu.setVisibility(View.GONE);
-        addMenuItem("◀ 返回",new Runnable(){public void run(){ shellKey("4"); hideMenu(); }});
-        addMenuItem("● 主页",new Runnable(){public void run(){ goHome(); hideMenu(); }});
-        addMenuItem("🧰 打开主界面",new Runnable(){public void run(){ openApp(); hideMenu(); }});
-        addMenuItem("▦ 最近",new Runnable(){public void run(){ shellKey("187"); hideMenu(); }});
-        addMenuItem("🔓 开网",new Runnable(){public void run(){ fireOpenNet(); hideMenu(); }});
-        addMenuItem("✕ 关闭悬浮球",new Runnable(){public void run(){ hideMenu(); stopBall(); }});
+        buildMenu();
         menuLp=new WindowManager.LayoutParams(
             dp(140),WindowManager.LayoutParams.WRAP_CONTENT,
             Build.VERSION.SDK_INT>=26?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE,
@@ -118,6 +123,28 @@ public class FloatBallService extends Service {
         try{ wm.addView(menu,menuLp); Log.i("FloatBall","menu added"); }catch(Exception e){ Log.e("FloatBall","add menu fail",e);}
     }
 
+    // 可排序菜单项 id → 标签/动作
+    String[] ORDER_ID={"back","home","app","recent","net"};
+    void buildMenu(){
+        String saved=null;
+        try{ saved=getSharedPreferences("pf",0).getString("float_order",null); }catch(Exception e){}
+        java.util.List<String> ord=new java.util.ArrayList<String>();
+        if(saved!=null&&saved.length()>0){
+            String[] arr=saved.split(",");
+            for(String x:arr){ if(x!=null&&x.trim().length()>0) ord.add(x.trim()); }
+        }
+        for(String id:ORDER_ID){ if(!ord.contains(id)) ord.add(id); }
+        for(String id:ord){ addActionItem(id); }
+        addActionItem("close");
+    }
+    void addActionItem(String id){
+        if("back".equals(id)) addMenuItem("◀ 返回",new Runnable(){public void run(){ shellKey("4"); hideMenu(); }});
+        else if("home".equals(id)) addMenuItem("● 主页",new Runnable(){public void run(){ goHome(); hideMenu(); }});
+        else if("app".equals(id)) addMenuItem("🧰 打开主界面",new Runnable(){public void run(){ openApp(); hideMenu(); }});
+        else if("recent".equals(id)) addMenuItem("▦ 最近",new Runnable(){public void run(){ shellKey("187"); hideMenu(); }});
+        else if("net".equals(id)) addMenuItem("🔓 开网",new Runnable(){public void run(){ fireOpenNet(); hideMenu(); }});
+        else if("close".equals(id)) addMenuItem("✕ 关闭悬浮球",new Runnable(){public void run(){ hideMenu(); stopBall(); }});
+    }
     void addMenuItem(String t,final Runnable act){
         Button b=new Button(this);
         b.setText(t); b.setTextColor(0xFFFFFFFF); b.setTextSize(13); b.setAllCaps(false);
