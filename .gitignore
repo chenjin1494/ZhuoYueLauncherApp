@@ -1,0 +1,12 @@
+# 构建产物
+build/
+*.apk
+*.idsig
+
+# 本地工具/大文件不入库
+android-14/
+tools/
+bapk/
+apk_extract/
+*.zip
+*.java.bak
