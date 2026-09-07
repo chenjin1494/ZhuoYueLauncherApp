@@ -432,6 +432,7 @@ public class MainActivity extends Activity {
         settingsBody.addView(secOpt("⏹ 停止悬浮球",new Runnable(){public void run(){ stopFloatBall(); }}));
         settingsBody.addView(gap(4));
         settingsBody.addView(secTitle("📝 悬浮球菜单排序（▲上移 ▼下移，即时生效）"));
+        settingsBody.addView(secOpt("➕ 添加要打开的应用",new Runnable(){public void run(){ pickCustomApp(); }}));
         floatOrderList=new LinearLayout(this); floatOrderList.setOrientation(LinearLayout.VERTICAL);
         settingsBody.addView(floatOrderList);
         refreshFloatOrder();
@@ -935,9 +936,10 @@ public class MainActivity extends Activity {
         java.util.List<String> ord=floatOrder();
         for(int i=0;i<ord.size();i++){
             final int pos=i;
-            String id=ord.get(i);
+            final String id=ord.get(i);
             String nm=id;
             for(int k=0;k<FO_ID.length;k++){ if(FO_ID[k].equals(id)){ nm=FO_NAME[k]; break; } }
+            if(id.startsWith("c")){ String cl=customLabel(id); if(cl!=null) nm=cl; else continue; }
             if("close".equals(id)) nm="✕ 关闭悬浮球（固定末位）";
             LinearLayout row=new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
             row.setBackground(glass()); row.setPadding(dp(10),dp(4),dp(6),dp(4));
@@ -952,6 +954,12 @@ public class MainActivity extends Activity {
                 dn.setTextSize(11);
                 LinearLayout.LayoutParams dlp=new LinearLayout.LayoutParams(-2,-2); dlp.leftMargin=dp(4);
                 row.addView(dn,dlp);
+            }
+            if(id.startsWith("c")){
+                Btn del=gbtn("🗑",shp(10,0x66FF5555),new View.OnClickListener(){public void onClick(View v){ delCustom(id); }});
+                del.setTextSize(11);
+                LinearLayout.LayoutParams dlp2=new LinearLayout.LayoutParams(-2,-2); dlp2.leftMargin=dp(4);
+                row.addView(del,dlp2);
             }
             LinearLayout.LayoutParams rlp=new LinearLayout.LayoutParams(-1,-2); if(pos>0) rlp.topMargin=dp(4);
             floatOrderList.addView(row,rlp);
@@ -971,6 +979,102 @@ public class MainActivity extends Activity {
         saveFloatOrder(ord);
         refreshFloatOrder();
         toast("已调整，悬浮球菜单已更新");
+    }
+    // ---------- 自定义应用项 ----------
+    java.util.List<String[]> customList(){
+        java.util.List<String[]> out=new java.util.ArrayList<String[]>();
+        String saved=prefs.getString("float_custom","");
+        if(saved!=null&&saved.length()>0){
+            String[] lines=saved.split("\n");
+            for(String ln:lines){
+                String[] f=ln.split("\\|",-1);
+                if(f.length>=2&&f[0].trim().length()>0) out.add(new String[]{f[0],f[1]});
+            }
+        }
+        return out;
+    }
+    void saveCustom(java.util.List<String[]> list){
+        StringBuilder sb=new StringBuilder();
+        for(String[] it:list) sb.append(it[0]).append("|").append(it[1]).append("\n");
+        prefs.edit().putString("float_custom",sb.toString()).commit();
+    }
+    String customLabel(String id){
+        try{
+            int n=Integer.parseInt(id.substring(1));
+            java.util.List<String[]> l=customList();
+            if(n>=0&&n<l.size()) return l.get(n)[0];
+        }catch(Exception e){}
+        return null;
+    }
+    void delCustom(String id){
+        int n=-1; try{ n=Integer.parseInt(id.substring(1)); }catch(Exception e){}
+        if(n<0) return;
+        java.util.List<String[]> l=customList();
+        if(n>=l.size()) return;
+        l.remove(n);
+        saveCustom(l);
+        // 更新顺序: 删除 cN 并把之后的 cM 改 cM-1
+        java.util.List<String> ord=floatOrder();
+        ord.remove("c"+n);
+        java.util.List<String> nw=new java.util.ArrayList<String>();
+        for(String x:ord){
+            if(x.startsWith("c")){
+                try{ int m=Integer.parseInt(x.substring(1)); if(m>n) nw.add("c"+(m-1)); else nw.add(x); }
+                catch(Exception e){ nw.add(x); }
+            } else nw.add(x);
+        }
+        saveFloatOrder(nw);
+        refreshFloatOrder();
+        toast("已移除该菜单项");
+    }
+    void addCustomApp(String label,String pkg){
+        java.util.List<String[]> l=customList();
+        // 去重
+        for(String[] it:l){ if(it[1].equals(pkg)){ toast("该应用已在菜单中"); return; } }
+        l.add(new String[]{label,pkg});
+        saveCustom(l);
+        java.util.List<String> ord=floatOrder();
+        // close 之前插入 c{size-1}
+        ord.add("c"+(l.size()-1));
+        if(ord.contains("close")){ ord.remove("close"); ord.add("close"); }
+        saveFloatOrder(ord);
+        refreshFloatOrder();
+        toast("已添加:「"+label+"」到悬浮球菜单");
+    }
+    void pickCustomApp(){
+        try{
+            // 弹应用选择对话框
+            final android.app.Dialog d=new android.app.Dialog(this);
+            d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+            if(d.getWindow()!=null){ d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000)); d.getWindow().setDimAmount(0.35f); }
+            LinearLayout p=new LinearLayout(this); p.setOrientation(LinearLayout.VERTICAL);
+            GradientDrawable gd=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xF2253160,0xF2121A40});
+            gd.setCornerRadius(dp(24)); gd.setStroke(dp(1),0x66FFFFFF);
+            p.setBackground(gd); p.setPadding(dp(18),dp(16),dp(18),dp(14));
+            TextView tt=new TextView(this); tt.setText("选择要加入悬浮球菜单的应用"); tt.setTextColor(Color.WHITE); tt.setTextSize(16); tt.setTypeface(null,Typeface.BOLD);
+            p.addView(tt);
+            ScrollView sv=new ScrollView(this);
+            LinearLayout list=new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL);
+            sv.addView(list);
+            p.addView(sv,new LinearLayout.LayoutParams(-1,dp(380)));
+            try{
+                Intent mi=new Intent(Intent.ACTION_MAIN); mi.addCategory(Intent.CATEGORY_LAUNCHER);
+                final java.util.List<ResolveInfo> ri=getPackageManager().queryIntentActivities(mi,0);
+                java.util.List<String[]> apps=new java.util.ArrayList<String[]>();
+                for(ResolveInfo rr:ri){
+                    try{ apps.add(new String[]{rr.loadLabel(getPackageManager()).toString(),rr.activityInfo.packageName}); }catch(Exception e){}
+                }
+                Collections.sort(apps,new Comparator<String[]>(){public int compare(String[] a,String[] b){return a[0].compareToIgnoreCase(b[0]);}});
+                for(final String[] a:apps){
+                    Btn b=gbtn(a[0],glass(),new View.OnClickListener(){public void onClick(View v){ try{ d.dismiss(); }catch(Exception e){} addCustomApp(a[0],a[1]); }});
+                    b.setTextSize(13); b.setGravity(Gravity.LEFT|Gravity.CENTER_VERTICAL);
+                    list.addView(b);
+                }
+            }catch(Exception e){}
+            d.setContentView(p,new android.widget.FrameLayout.LayoutParams(dp(360),-2));
+            d.setCanceledOnTouchOutside(true);
+            d.show();
+        }catch(Exception e){ toast("无法打开应用列表"); }
     }
     void requestOverlay(){
         try{

@@ -134,8 +134,42 @@ public class FloatBallService extends Service {
             for(String x:arr){ if(x!=null&&x.trim().length()>0) ord.add(x.trim()); }
         }
         for(String id:ORDER_ID){ if(!ord.contains(id)) ord.add(id); }
-        for(String id:ord){ addActionItem(id); }
+        for(String id:ord){
+            if(id.startsWith("c")){
+                int n=-1; try{ n=Integer.parseInt(id.substring(1)); }catch(Exception e){}
+                String[] c=customItem(n);
+                if(c!=null) addMenuItem(c[0],new Runnable(){ public void run(){ hideMenu(); launchApp(c[1]); } });
+                continue;
+            }
+            addActionItem(id);
+        }
         addActionItem("close");
+    }
+    // 读自定义项 label|pkg(第n项)
+    String[] customItem(int n){
+        try{
+            String saved=getSharedPreferences("pf",0).getString("float_custom","");
+            if(saved==null||saved.length()==0) return null;
+            String[] lines=saved.split("\n");
+            if(n<0||n>=lines.length) return null;
+            String[] f=lines[n].split("\\|",-1);
+            if(f.length<2) return null;
+            return new String[]{f[0],f[1]};
+        }catch(Exception e){ return null; }
+    }
+    // 启动任意应用(悬浮菜单自定义项)
+    void launchApp(String pkg){
+        try{
+            android.content.pm.PackageManager pm=getPackageManager();
+            Intent li=pm.getLaunchIntentForPackage(pkg);
+            if(li==null){
+                li=new Intent(Intent.ACTION_MAIN); li.addCategory(Intent.CATEGORY_LAUNCHER);
+                li.setPackage(pkg);
+            }
+            li.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+            startActivity(li);
+            Log.i("FloatBall","launch "+pkg);
+        }catch(Exception e){ Log.e("FloatBall","launch fail "+pkg,e); }
     }
     void addActionItem(String id){
         if("back".equals(id)) addMenuItem("◀ 返回",new Runnable(){public void run(){ shellKey("4"); hideMenu(); }});
