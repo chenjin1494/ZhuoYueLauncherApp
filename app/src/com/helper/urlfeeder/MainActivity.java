@@ -471,10 +471,22 @@ public class MainActivity extends Activity {
         if(rootF==null) return;
         checkPage=new FrameLayout(this);
         checkPage.setBackground(gradBg(new int[]{0xFF0E1428,0xFF1B2345,0xFF101736}));
+        // 内容放滚动容器，避免超高/与状态栏挤压
+        ScrollView csv=new ScrollView(this); csv.setSmoothScrollingEnabled(true);
+        checkPage.addView(csv,new FrameLayout.LayoutParams(-1,-1));
         final LinearLayout body=new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding(dp(18),dp(10),dp(18),dp(14));
-        checkPage.addView(body,new FrameLayout.LayoutParams(-1,-1));
+        // fallback：初始即用主内容的状态栏高度(insets 对初始 GONE 的页面不派发)
+        int top0=(content!=null&&content.getPaddingTop()>0)?content.getPaddingTop():dp(10);
+        body.setPadding(dp(18),top0+dp(2),dp(18),dp(14));
+        csv.addView(body);
         checkBody=body;
+        if(Build.VERSION.SDK_INT>=20){
+            checkPage.setOnApplyWindowInsetsListener(new android.view.View.OnApplyWindowInsetsListener(){
+                public android.view.WindowInsets onApplyWindowInsets(View v,android.view.WindowInsets ins){
+                    int top=ins.getSystemWindowInsetTop(); int bot=ins.getSystemWindowInsetBottom();
+                    body.setPadding(dp(18),Math.max(dp(6),top+dp(4)),dp(18),bot+dp(10));
+                    return ins; }});
+        }
         rootF.addView(checkPage,new FrameLayout.LayoutParams(-1,-1));
         checkPage.setVisibility(View.GONE);
     }
