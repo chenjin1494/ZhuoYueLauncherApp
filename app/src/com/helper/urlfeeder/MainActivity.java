@@ -1092,6 +1092,7 @@ public class MainActivity extends Activity {
         return false; }
     protected void onNewIntent(Intent i){ super.onNewIntent(i); setIntent(i);
         if(i!=null&&ACT_FIX_BROWSER.equals(i.getAction())){ runOnUiThread(new Runnable(){public void run(){ fixDefaultBrowser(); }}); return; }
+        if(i!=null&&"com.helper.urlfeeder.action.OPEN_MAIN".equals(i.getAction())){ runOnUiThread(new Runnable(){public void run(){ selectTab(0); }}); return; }
         if(handleIntent(i)){ runOnUiThread(new Runnable(){public void run(){ selectTab(0); if(pendingUrl!=null) urlInput.setText(pendingUrl); }}); } }
 
 
