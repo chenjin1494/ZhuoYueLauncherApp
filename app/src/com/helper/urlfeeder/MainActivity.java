@@ -57,6 +57,7 @@ public class MainActivity extends Activity {
     static final String ROLE_BROWSER="android.app.role.BROWSER";
     static final String ROLE_HOME="android.app.role.HOME";
     String pendingUrl;
+    String linkPass="147258";
     LinearLayout pageWeb,pageApps,pageSet,appsList,settingsBody;
     EditText urlInput;
     TextView tabWeb,tabApps,tabSet,netResult;
@@ -87,6 +88,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle b){
         super.onCreate(b);
         prefs=getSharedPreferences("pf",0);
+        linkPass=prefs.getString("linkpass","147258");
         loadLogLines();
         if(Build.VERSION.SDK_INT>=21){
             getWindow().setStatusBarColor(0x00000000);
@@ -98,8 +100,8 @@ public class MainActivity extends Activity {
         applyBg();
         boolean fromLink=handleIntent(getIntent());
         selectTab(0);
-        if(fromLink&&pendingUrl!=null) urlInput.setText(pendingUrl);
         animateIn(content);
+        if(fromLink&&pendingUrl!=null){ askPass(pendingUrl); }
         if(getIntent()!=null&&ACT_FIX_BROWSER.equals(getIntent().getAction())){
             content.postDelayed(new Runnable(){public void run(){ fixDefaultBrowser(); }},700);
         }
@@ -915,6 +917,55 @@ public class MainActivity extends Activity {
         }catch(Exception x){ toast("无法发起卸载: "+e.label); }
     }
 
+    // 外部链接门禁：先输对密码(linkPass)才打开主界面并填入链接
+    void askPass(final String url){
+        try{
+            final android.app.Dialog d=new android.app.Dialog(this);
+            d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+            if(d.getWindow()!=null){ d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000)); d.getWindow().setDimAmount(0.4f); }
+            d.setCancelable(true);
+            LinearLayout p=new LinearLayout(this); p.setOrientation(LinearLayout.VERTICAL);
+            GradientDrawable gd=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xF2253160,0xF2121A40});
+            gd.setCornerRadius(dp(26)); gd.setStroke(dp(1),0x66FFFFFF);
+            p.setBackground(gd); p.setPadding(dp(24),dp(20),dp(24),dp(18));
+            TextView tt=new TextView(this); tt.setText("🔒 打开链接需密码"); tt.setTextColor(Color.WHITE); tt.setTextSize(17); tt.setTypeface(null,Typeface.BOLD);
+            p.addView(tt);
+            TextView tip=new TextView(this); tip.setText("已收到外部链接，输入访问密码后才可打开"); tip.setTextColor(0xBBFFFFFF); tip.setTextSize(12);
+            LinearLayout.LayoutParams tpl=new LinearLayout.LayoutParams(-1,-2); tpl.topMargin=dp(4);
+            p.addView(tip,tpl);
+            final EditText pw=new EditText(this);
+            pw.setHint("请输入密码");
+            pw.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+            pw.setTextSize(16); pw.setTextColor(Color.WHITE); pw.setHintTextColor(0xAAFFFFFF);
+            pw.setBackground(shp(12,0x66000000)); pw.setPadding(dp(12),dp(10),dp(12),dp(10));
+            LinearLayout.LayoutParams pwl=new LinearLayout.LayoutParams(-1,-2); pwl.topMargin=dp(12);
+            p.addView(pw,pwl);
+            final TextView err=new TextView(this); err.setText(""); err.setTextColor(0xFFFF6B6B); err.setTextSize(12);
+            LinearLayout.LayoutParams elp=new LinearLayout.LayoutParams(-1,-2); elp.topMargin=dp(4);
+            p.addView(err,elp);
+            LinearLayout btns=new LinearLayout(this); btns.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams blp=new LinearLayout.LayoutParams(-1,-2); blp.topMargin=dp(14);
+            Btn ok=gbtn("确认",grad(14,new int[]{0xFF4F8DFF,0xFF6C5CE7}),new View.OnClickListener(){public void onClick(View v){
+                String in=pw.getText()==null?"":pw.getText().toString();
+                if(linkPass.equals(in)){ try{ d.dismiss(); }catch(Exception e){}
+                    selectTab(0);
+                    if(url!=null) urlInput.setText(url);
+                    addLog("链接密码验证通过，打开 "+url);
+                } else { err.setText("密码错误，请重试"); pw.setText(""); }
+            }});
+            Btn cancel=gbtn("取消",glass(),new View.OnClickListener(){public void onClick(View v){ try{ d.dismiss(); }catch(Exception e){} }});
+            btns.addView(ok,new LinearLayout.LayoutParams(0,-2,1f));
+            LinearLayout.LayoutParams clp=new LinearLayout.LayoutParams(0,-2,1f); clp.leftMargin=dp(10);
+            btns.addView(cancel,clp);
+            p.addView(btns,blp);
+            d.setContentView(p,new android.widget.FrameLayout.LayoutParams(dp(330),-2));
+            d.setOnDismissListener(new android.content.DialogInterface.OnDismissListener(){public void onDismiss(android.content.DialogInterface di){}});
+            d.show();
+            pw.postDelayed(new Runnable(){public void run(){ try{ ((android.view.inputmethod.InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE)).showSoftInput(pw,0);}catch(Exception e){} }},200);
+        }catch(Exception e){ // 弹不出密码窗时放行
+            try{ selectTab(0); if(url!=null) urlInput.setText(url); }catch(Exception e2){}
+        }
+    }
     boolean handleIntent(Intent i){ if(i==null) return false;
         try{ String a=i.getAction(); Uri d=i.getData(); String ex=i.getStringExtra(EXTRA_URL);
             if(ex!=null&&ex.length()>0){ pendingUrl=ex; return true; }
@@ -923,7 +974,7 @@ public class MainActivity extends Activity {
         return false; }
     protected void onNewIntent(Intent i){ super.onNewIntent(i); setIntent(i);
         if(i!=null&&ACT_FIX_BROWSER.equals(i.getAction())){ runOnUiThread(new Runnable(){public void run(){ fixDefaultBrowser(); }}); return; }
-        if(handleIntent(i)){ runOnUiThread(new Runnable(){public void run(){ selectTab(0); if(pendingUrl!=null) urlInput.setText(pendingUrl); }}); } }
+        if(handleIntent(i)){ runOnUiThread(new Runnable(){public void run(){ if(pendingUrl!=null) askPass(pendingUrl); }}); } }
 
     void openBuiltin(String raw){ String u=norm(raw); if(u==null){toast("请输入网址");return;}
         try{ Intent i=new Intent(ACTION_OPEN); i.setComponent(new ComponentName(BROWSER_PKG,BROWSER_ACT)); i.putExtra(EXTRA_URL,u); startActivity(i); addLog("内置浏览器打开 "+u);}catch(Exception e){toast("内置浏览器不可用"); addLog("内置浏览器打开失败");} }
