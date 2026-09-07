@@ -422,6 +422,15 @@ public class MainActivity extends Activity {
         settingsBody.addView(secOpt("↩️ 恢复卓越Launcher 桌面",new Runnable(){public void run(){szRestoreZy();}}));
         settingsBody.addView(secOpt("📊 查询桌面状态",new Runnable(){public void run(){szStatus();}}));
         settingsBody.addView(gap(6));
+        boolean fbok=android.provider.Settings.canDrawOverlays(this);
+        settingsBody.addView(secTitle("🪄 悬浮球导航（返回/主页/最近/开网）"));
+        TextView fb=new TextView(this); fb.setText(fbok?"悬浮窗已授权":"未授权悬浮窗 → 点下方「授权」");
+        fb.setTextColor(fbok?0xDDFFFFFF:0xFFFFB199); fb.setTextSize(12); fb.setBackground(glass()); fb.setPadding(dp(14),dp(10),dp(14),dp(10));
+        settingsBody.addView(fb);
+        settingsBody.addView(gap(6));
+        settingsBody.addView(secOpt(fbok?"🟢 启动悬浮球（退出App也常驻）":"🔑 授权悬浮窗",new Runnable(){public void run(){ if(fbok){ startFloatBall(); } else { requestOverlay(); } }}));
+        settingsBody.addView(secOpt("⏹ 停止悬浮球",new Runnable(){public void run(){ stopFloatBall(); }}));
+        settingsBody.addView(gap(6));
         settingsBody.addView(secTitle("⚡ 默认应用 / 工具"));
         settingsBody.addView(secOpt("🌐 设为默认浏览器（守护会保持，需授权一次）",new Runnable(){public void run(){fixDefaultBrowser();}}));
         settingsBody.addView(secOpt("🏠 设为桌面/主页（抢回 HOME，需授权一次）",new Runnable(){public void run(){fixDefaultHome();}}));
@@ -880,6 +889,27 @@ public class MainActivity extends Activity {
         toast("守护已停止");
         addLog("网络守护已停止");
         buildSettings();
+    }
+    void startFloatBall(){
+        try{
+            if(!android.provider.Settings.canDrawOverlays(this)){
+                requestOverlay(); return;
+            }
+            Intent s=new Intent(this,FloatBallService.class);
+            startService(s);
+            toast("悬浮球已启动"); addLog("悬浮球导航已启动");
+        }catch(Exception e){ toast("启动失败:"+e.getMessage()); }
+    }
+    void stopFloatBall(){
+        try{ Intent s=new Intent(this,FloatBallService.class); stopService(s); toast("悬浮球已停止"); addLog("悬浮球已停止"); }catch(Exception e){}
+    }
+    void requestOverlay(){
+        try{
+            Intent i=new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:"+getPackageName()));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        }catch(Exception e){ toast("无法打开悬浮窗授权页"); }
     }
     public void onRequestPermissionsResult(int code,String[] perms,int[] gr){
         super.onRequestPermissionsResult(code,perms,gr);
