@@ -59,6 +59,7 @@ public class MainActivity extends Activity {
     TextView tabWeb,tabApps,tabSet,netResult;
     FrameLayout rootF;
     FrameLayout aboutPage;
+    FrameLayout checkPage;
     ImageView bgWall;
     View content, dim;
     ScrollView webScroll;
@@ -351,6 +352,7 @@ public class MainActivity extends Activity {
         if(settingsBody==null) return;
         settingsBody.removeAllViews();
         settingsBody.addView(secOpt("📄 关于本应用（版本 · 开发者）",new Runnable(){public void run(){openAbout();}}));
+        settingsBody.addView(secOpt("🔍 设备自检与一键修复",new Runnable(){public void run(){openCheck();}}));
         settingsBody.addView(gap(2));
         settingsBody.addView(secTitle("📖 使用说明（简短版）"));
         TextView help=new TextView(this);
@@ -441,7 +443,111 @@ public class MainActivity extends Activity {
 
     void openAbout(){ if(aboutPage==null) buildAbout(); try{ aboutPage.bringToFront(); }catch(Exception e){} aboutPage.setVisibility(View.VISIBLE); }
     void closeAbout(){ if(aboutPage!=null) aboutPage.setVisibility(View.GONE); }
+    // ---------- 设备自检页 ----------
+    LinearLayout checkBody;
+    void openCheck(){ if(checkPage==null) buildCheck(); try{ checkPage.bringToFront(); }catch(Exception e){} checkPage.setVisibility(View.VISIBLE); refreshCheck(); }
+    void closeCheck(){ if(checkPage!=null) checkPage.setVisibility(View.GONE); }
+    void buildCheck(){
+        if(rootF==null) return;
+        checkPage=new FrameLayout(this);
+        checkPage.setBackground(gradBg(new int[]{0xFF0E1428,0xFF1B2345,0xFF101736}));
+        final LinearLayout body=new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(18),dp(10),dp(18),dp(14));
+        checkPage.addView(body,new FrameLayout.LayoutParams(-1,-1));
+        checkBody=body;
+        rootF.addView(checkPage,new FrameLayout.LayoutParams(-1,-1));
+        checkPage.setVisibility(View.GONE);
+    }
+    void refreshCheck(){
+        if(checkBody==null) return;
+        checkBody.removeAllViews();
+        LinearLayout bar=new LinearLayout(this); bar.setOrientation(LinearLayout.HORIZONTAL);
+        Btn back=gbtn("← 返回",glass(),new View.OnClickListener(){public void onClick(View v){closeCheck();}});
+        back.setTextSize(13); bar.addView(back);
+        TextView t1=new TextView(this); t1.setText("🔍 设备自检"); t1.setTextColor(Color.WHITE); t1.setTextSize(17); t1.setTypeface(null,Typeface.BOLD);
+        bar.addView(t1,new LinearLayout.LayoutParams(0,-2,1f)); t1.setGravity(Gravity.CENTER);
+        checkBody.addView(bar);
+        checkBody.addView(gap(6));
+        Btn re=gbtn("🔄 重新检测",shp(12,0x2EFFFFFF),new View.OnClickListener(){public void onClick(View v){ refreshCheck(); }});
+        re.setTextSize(12); checkBody.addView(re);
+        checkBody.addView(gap(6));
+
+        LinearLayout card=new LinearLayout(this); card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(glass()); card.setPadding(dp(14),dp(12),dp(14),dp(12));
+        String fw=pmState("cn.com.microtrust.firewall");
+        rowChk(card,"管控防火墙App",fw.indexOf("停用")<0&&fw.indexOf("未装")<0, fw);
+        java.util.List<String[]> br=webBrowsers();
+        rowChk(card,"可用浏览器(轮换)",br.size()>0, "数量 "+br.size());
+        String home="?";
+        try{ Intent h=new Intent(Intent.ACTION_MAIN); h.addCategory(Intent.CATEGORY_HOME);
+            android.content.pm.ResolveInfo ri=getPackageManager().resolveActivity(h,PackageManager.MATCH_DEFAULT_ONLY);
+            home=(ri!=null&&ri.activityInfo!=null)?ri.activityInfo.packageName:"(无)";
+        }catch(Exception e){}
+        rowChk(card,"默认桌面",home.indexOf("lawnchair")>=0||home.indexOf("urlfeeder")>=0, home);
+        boolean guard=gRunning();
+        rowChk(card,"网络守护",guard, guard?"运行中":"未运行");
+        boolean sz=ShizukuUtil.running();
+        boolean authed=sz&&ShizukuUtil.permission()==0;
+        rowChk(card,"Shizuku",authed, sz?(authed?"运行·已授权":"运行·未授权"):"未运行");
+        checkBody.addView(card);
+        checkBody.addView(gap(8));
+
+        TextView fx=new TextView(this); fx.setText("一键修复（需 Shizuku 授权）"); fx.setTextColor(0xCCFFFFFF); fx.setTextSize(13); fx.setTypeface(null,Typeface.BOLD);
+        checkBody.addView(fx);
+        checkBody.addView(gap(4));
+        Btn f1=gbtn("🔧 启用管控防火墙App（若被停用）",shp(12,0x2EFFFFFF),new View.OnClickListener(){public void onClick(View v){ szFix("enable","cn.com.microtrust.firewall"); }});
+        f1.setTextSize(13); checkBody.addView(f1);
+        Btn f2=gbtn("🔓 一键开网（清规则）",shp(12,0x2EFFFFFF),new View.OnClickListener(){public void onClick(View v){ doOpenNet(); }});
+        f2.setTextSize(13); checkBody.addView(f2);
+        Btn f3=gbtn("🛡 启动/重启守护",shp(12,0x2EFFFFFF),new View.OnClickListener(){public void onClick(View v){ if(!gRunning()) launchGuardSilent(); else toast("守护已在运行"); }});
+        f3.setTextSize(13); checkBody.addView(f3);
+        TextView note=new TextView(this); note.setText("自检仅读取状态；修复需 Shizuku 授权后执行。"); note.setTextSize(11); note.setTextColor(0x88FFFFFF);
+        checkBody.addView(note);
+    }
+    void rowChk(LinearLayout c,String k,boolean ok){ rowChk(c,k,ok,ok?"正常":""); }
+    void rowChk(LinearLayout c,String k,boolean ok,String extra){
+        LinearLayout r=new LinearLayout(this); r.setOrientation(LinearLayout.HORIZONTAL); r.setGravity(Gravity.CENTER_VERTICAL);
+        TextView kk=new TextView(this); kk.setText(k); kk.setTextColor(0xE6FFFFFF); kk.setTextSize(13);
+        r.addView(kk,new LinearLayout.LayoutParams(0,-2,1f));
+        String disp=(extra!=null&&extra.length()>0)?extra:"";
+        TextView vv=new TextView(this); vv.setText((ok?"✅ ":"⚠️ ")+disp); vv.setTextColor(ok?0xFF6EE7B7:0xFFFFB199); vv.setTextSize(12);
+        r.addView(vv,new LinearLayout.LayoutParams(-2,-2));
+        c.addView(r);
+    }
+    boolean gRunning(){
+        try{ android.app.ActivityManager am=(android.app.ActivityManager)getSystemService(Context.ACTIVITY_SERVICE);
+            java.util.List<android.app.ActivityManager.RunningServiceInfo> l=am.getRunningServices(300);
+            if(l!=null) for(android.app.ActivityManager.RunningServiceInfo si:l) if(si.service!=null&&"com.helper.urlfeeder.GuardService".equals(si.service.getClassName())) return true;
+        }catch(Exception e){}
+        return false;
+    }
+    String pmState(String pkg){
+        try{
+            int st=getPackageManager().getApplicationEnabledSetting(pkg);
+            if(st==PackageManager.COMPONENT_ENABLED_STATE_DISABLED||st==PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER) return "停用";
+            return "启用";
+        }catch(Exception e){ return "未装"; }
+    }
+    void szFix(final String action,final String pkg){
+        if(!ShizukuUtil.running()){ toast("Shizuku 未运行"); return; }
+        if(ShizukuUtil.permission()!=0){ toast("请先授权 Shizuku"); return; }
+        toast("执行中…");
+        new Thread(new Runnable(){ public void run(){
+            String r=ShizukuUtil.pm(action,pkg);
+            final String res=r;
+            runOnUiThread(new Runnable(){ public void run(){ toast("结果: "+res); refreshCheck(); }});
+        }}).start();
+    }
+    void launchGuardSilent(){
+        try{ Intent s=new Intent(this,GuardService.class); s.setAction("start");
+            if(Build.VERSION.SDK_INT>=26) startForegroundService(s); else startService(s);
+            prefs.edit().putBoolean("guard_on",true).putBoolean("guard_off",false).commit();
+            toast("守护已启动"); addLog("网络守护已启动");
+        }catch(Exception e){ toast("启动失败:"+e.getMessage()); }
+    }
+
     public void onBackPressed(){
+        if(checkPage!=null&&checkPage.getVisibility()==View.VISIBLE){ closeCheck(); return; }
         if(aboutPage!=null&&aboutPage.getVisibility()==View.VISIBLE){ closeAbout(); return; }
         super.onBackPressed();
     }
