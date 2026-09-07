@@ -46,9 +46,6 @@ import java.util.Comparator;
 import java.util.List;
 
 public class MainActivity extends Activity {
-    static final String BROWSER_PKG="com.zy.ai.browser";
-    static final String BROWSER_ACT=BROWSER_PKG+".MainActivity";
-    static final String ACTION_OPEN="com.zy.ai.browser.action.OPEN_URL";
     static final String EXTRA_URL="extra_url";
     static final String FW_PKG="cn.com.microtrust.firewall";
     static final String FW_IFACE="cn.com.microtrust.firewall.aidl.IAFWService";
@@ -103,6 +100,28 @@ public class MainActivity extends Activity {
         if(getIntent()!=null&&ACT_FIX_BROWSER.equals(getIntent().getAction())){
             content.postDelayed(new Runnable(){public void run(){ fixDefaultBrowser(); }},700);
         }
+        // 自动开启网络守护：延后执行不占用首帧，已运行则不重复
+        content.postDelayed(new Runnable(){public void run(){ autoEnsureGuard(); }},1200);
+    }
+    void autoEnsureGuard(){
+        try{
+            boolean running=false;
+            android.app.ActivityManager am=(android.app.ActivityManager)getSystemService(android.content.Context.ACTIVITY_SERVICE);
+            if(am!=null){
+                try{
+                    java.util.List<android.app.ActivityManager.RunningServiceInfo> rl=am.getRunningServices(300);
+                    if(rl!=null) for(android.app.ActivityManager.RunningServiceInfo si:rl){
+                        if(si!=null&&si.service!=null&&"com.helper.urlfeeder.GuardService".equals(si.service.getClassName())){ running=true; break; }
+                    }
+                }catch(Exception e){ running=false; }
+            }
+            if(running) return;
+            if(prefs.getBoolean("guard_off",false)) return;   // 用户手动停止过 → 不再自动拉起
+            Intent s=new Intent(this,GuardService.class); s.setAction("start");
+            if(Build.VERSION.SDK_INT>=26) startForegroundService(s); else startService(s);
+            prefs.edit().putBoolean("guard_on",true).commit();
+            addLog("网络守护已自动启动");
+        }catch(Exception e){}
     }
 
     int dp(int v){ return (int)(v*getResources().getDisplayMetrics().density+0.5f); }
@@ -181,7 +200,7 @@ public class MainActivity extends Activity {
         tabWeb=tab("🏠 首页"); tabApps=tab("📱 应用"); tabSet=tab("⚙️ 设置");
         tabWeb.setOnClickListener(new View.OnClickListener(){public void onClick(View v){selectTab(0);}});
         tabApps.setOnClickListener(new View.OnClickListener(){public void onClick(View v){selectTab(1);buildApps();}});
-        tabSet.setOnClickListener(new View.OnClickListener(){public void onClick(View v){selectTab(2);buildSettings();}});
+        tabSet.setOnClickListener(new View.OnClickListener(){public void onClick(View v){selectTab(2);}});
         tabs.addView(tabWeb,new LinearLayout.LayoutParams(0,-1,1f));
         tabs.addView(sp(8));
         tabs.addView(tabApps,new LinearLayout.LayoutParams(0,-1,1f));
@@ -276,7 +295,7 @@ public class MainActivity extends Activity {
         root.addView(pageSet,new LinearLayout.LayoutParams(-1,0,1f));
         rootF.addView(content,new FrameLayout.LayoutParams(-1,-1));
         setContentView(rootF);
-        buildSettings();
+        // 设置页改为首次切入时才构建(懒加载)，显著加快冷启动
     }
 
     TextView tab(String s){ TextView t=new TextView(this); t.setText(s); t.setTextSize(15); t.setGravity(Gravity.CENTER); t.setTextColor(Color.WHITE); t.setBackground(glass()); liquidFx(t); return t; }
@@ -288,8 +307,6 @@ public class MainActivity extends Activity {
         urlInput.setTextSize(15); urlInput.setSingleLine(true); urlInput.setPadding(dp(12),dp(10),dp(12),dp(10));
         urlInput.setBackground(shp(12,0x66000000)); urlInput.setTextColor(Color.WHITE); urlInput.setHintTextColor(0xAAFFFFFF);
         c.addView(urlInput);
-        c.addView(gap(12));
-        c.addView(gbtn("🚀 内置白名单浏览器打开",grad(14,new int[]{0xFF4F8DFF,0xFF6C5CE7}),new View.OnClickListener(){public void onClick(View v){openBuiltin(urlInput.getText().toString().trim());}}));
         c.addView(gap(10));
         LinearLayout r=new LinearLayout(this); r.setOrientation(LinearLayout.HORIZONTAL);
         r.addView(gbtn("📋 粘贴",grad(14,new int[]{0xFF8E9EAB,0xFF64748B}),new View.OnClickListener(){public void onClick(View v){paste();}}),new LinearLayout.LayoutParams(0,-2,1f));
@@ -490,6 +507,7 @@ public class MainActivity extends Activity {
     }
     void selectTab(int idx){
         curTab=idx;
+        if(idx==2&&settingsBody!=null&&settingsBody.getChildCount()==0){ buildSettings(); }
         tabWeb.setBackground(idx==0?grad(22,new int[]{0xFF4F8DFF,0xFF6C5CE7}):glass());
         tabApps.setBackground(idx==1?grad(22,new int[]{0xFF4F8DFF,0xFF6C5CE7}):glass());
         tabSet.setBackground(idx==2?grad(22,new int[]{0xFF4F8DFF,0xFF6C5CE7}):glass());
@@ -729,7 +747,7 @@ public class MainActivity extends Activity {
         try{
             Intent s=new Intent(this,GuardService.class); s.setAction("start");
             if(Build.VERSION.SDK_INT>=26) startForegroundService(s); else startService(s);
-            prefs.edit().putBoolean("guard_on",true).commit();
+            prefs.edit().putBoolean("guard_on",true).putBoolean("guard_off",false).commit();
             toast("守护已启动 · 被拦后自动开网");
             addLog("网络守护已启动");
         }catch(Exception e){ toast("守护启动失败:"+e.getMessage()); addLog("守护启动失败: "+e.getMessage()); }
@@ -737,7 +755,7 @@ public class MainActivity extends Activity {
     }
     void stopGuard(){
         try{ Intent s=new Intent(this,GuardService.class); s.setAction("stop"); startService(s); }catch(Exception e){}
-        prefs.edit().putBoolean("guard_on",false).commit();
+        prefs.edit().putBoolean("guard_on",false).putBoolean("guard_off",true).commit();
         toast("守护已停止");
         addLog("网络守护已停止");
         buildSettings();
@@ -925,8 +943,7 @@ public class MainActivity extends Activity {
         if(i!=null&&ACT_FIX_BROWSER.equals(i.getAction())){ runOnUiThread(new Runnable(){public void run(){ fixDefaultBrowser(); }}); return; }
         if(handleIntent(i)){ runOnUiThread(new Runnable(){public void run(){ selectTab(0); if(pendingUrl!=null) urlInput.setText(pendingUrl); }}); } }
 
-    void openBuiltin(String raw){ String u=norm(raw); if(u==null){toast("请输入网址");return;}
-        try{ Intent i=new Intent(ACTION_OPEN); i.setComponent(new ComponentName(BROWSER_PKG,BROWSER_ACT)); i.putExtra(EXTRA_URL,u); startActivity(i); addLog("内置浏览器打开 "+u);}catch(Exception e){toast("内置浏览器不可用"); addLog("内置浏览器打开失败");} }
+
     void openChrome(String raw){ String u=norm(raw); if(u==null){toast("请输入网址");return;}
         try{ Intent i=new Intent(Intent.ACTION_VIEW,Uri.parse(u)); i.setComponent(new ComponentName("com.android.chrome","com.google.android.apps.chrome.IntentDispatcher")); startActivity(i); addLog("Chrome 打开 "+u);}catch(Exception e){toast("Chrome 不可用"); addLog("Chrome 打开失败");} }
     void paste(){ try{ ClipboardManager cm=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE); if(cm!=null&&cm.hasPrimaryClip()&&cm.getPrimaryClip()!=null&&cm.getPrimaryClip().getItemAt(0)!=null){ CharSequence t=cm.getPrimaryClip().getItemAt(0).coerceToText(this); if(t!=null)urlInput.setText(t.toString().trim()); } else toast("剪贴板为空"); }catch(Exception e){toast("读取失败");} }
