@@ -72,6 +72,8 @@ public class MainActivity extends Activity {
     int curTab=0;
     List<String> logLines=new ArrayList<String>();
     TextView logView;
+    java.util.List<String> hist=new java.util.ArrayList<String>();
+    LinearLayout histRow;
     RefreshArrow arrowView;
     boolean spinning=false, hapticFired=false;
     int triggerPx=52, lockPx=150;
@@ -85,6 +87,7 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         prefs=getSharedPreferences("pf",0);
         loadLogLines();
+        loadHist();
         if(Build.VERSION.SDK_INT>=21){
             getWindow().setStatusBarColor(0x00000000);
             getWindow().getDecorView().setSystemUiVisibility(
@@ -212,6 +215,18 @@ public class MainActivity extends Activity {
         webScroll=new ScrollView(this); webScroll.setSmoothScrollingEnabled(true); ScrollView sw=webScroll;
         pageWeb=new LinearLayout(this); pageWeb.setOrientation(LinearLayout.VERTICAL); pageWeb.setPadding(dp(14),dp(8),dp(14),dp(18));
         pageWeb.addView(cardWeb());
+        // 最近打开行
+        LinearLayout histCard=new LinearLayout(this); histCard.setOrientation(LinearLayout.VERTICAL);
+        histCard.setPadding(dp(12),dp(8),dp(12),dp(8)); histCard.setBackground(glass());
+        TextView hl=new TextView(this); hl.setText("🕘 最近打开"); hl.setTextColor(0xCCFFFFFF); hl.setTextSize(12);
+        histCard.addView(hl);
+        histRow=new LinearLayout(this); histRow.setOrientation(LinearLayout.HORIZONTAL);
+        histRow.setPadding(0,dp(6),0,0);
+        histCard.addView(histRow);
+        refreshHist();
+        LinearLayout.LayoutParams hclp=new LinearLayout.LayoutParams(-1,-2); hclp.topMargin=dp(10);
+        histCard.setLayoutParams(hclp);
+        pageWeb.addView(histCard);
         LinearLayout logCard=new LinearLayout(this); logCard.setOrientation(LinearLayout.VERTICAL);
         logCard.setPadding(dp(12),dp(10),dp(12),dp(10)); logCard.setBackground(glass());
         LinearLayout.LayoutParams loglp=new LinearLayout.LayoutParams(-1,-2);
@@ -311,7 +326,7 @@ public class MainActivity extends Activity {
         LinearLayout r=new LinearLayout(this); r.setOrientation(LinearLayout.HORIZONTAL);
         r.addView(gbtn("📋 粘贴",grad(14,new int[]{0xFF8E9EAB,0xFF64748B}),new View.OnClickListener(){public void onClick(View v){paste();}}),new LinearLayout.LayoutParams(0,-2,1f));
         r.addView(sp(10));
-        r.addView(gbtn("🟢 Chrome",grad(14,new int[]{0xFF4CAF50,0xFF2E7D32}),new View.OnClickListener(){public void onClick(View v){openChrome(urlInput.getText().toString().trim());}}),new LinearLayout.LayoutParams(0,-2,1f));
+        r.addView(gbtn("🌐 智能浏览器",grad(14,new int[]{0xFF4CAF50,0xFF2E7D32}),new View.OnClickListener(){public void onClick(View v){openWeb(urlInput.getText().toString().trim());}}),new LinearLayout.LayoutParams(0,-2,1f));
         c.addView(r);
         c.addView(gap(12));
         c.addView(gbtn("🔓 一键开网（重启后点一次）",grad(14,new int[]{0xFF10B981,0xFF059669}),new View.OnClickListener(){public void onClick(View v){doOpenNet();}}));
@@ -944,11 +959,87 @@ public class MainActivity extends Activity {
         if(handleIntent(i)){ runOnUiThread(new Runnable(){public void run(){ selectTab(0); if(pendingUrl!=null) urlInput.setText(pendingUrl); }}); } }
 
 
-    void openChrome(String raw){ String u=norm(raw); if(u==null){toast("请输入网址");return;}
-        try{ Intent i=new Intent(Intent.ACTION_VIEW,Uri.parse(u)); i.setComponent(new ComponentName("com.android.chrome","com.google.android.apps.chrome.IntentDispatcher")); startActivity(i); addLog("Chrome 打开 "+u);}catch(Exception e){toast("Chrome 不可用"); addLog("Chrome 打开失败");} }
+    // 智能浏览器轮换：自动收集可用浏览器，每次点击轮换下一个（排除自身与被拉黑的白名单浏览器）
+    void openWeb(String raw){
+        String u=norm(raw); if(u==null){toast("请输入网址");return;}
+        java.util.List<String[]> bs=webBrowsers();
+        if(bs.isEmpty()){ toast("没有可用浏览器"); addLog("无可用浏览器打开 "+u); return; }
+        int last=prefs.getInt("lastBrowser",-1);
+        int idx=(last+1)%bs.size();   // 轮换到下一个
+        prefs.edit().putInt("lastBrowser",idx).commit();
+        String[] b=bs.get(idx);
+        try{
+            Intent i=new Intent(Intent.ACTION_VIEW,Uri.parse(u));
+            i.setComponent(new ComponentName(b[0],b[1]));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+            addLog("浏览器["+(idx+1)+"/"+bs.size()+" "+b[0]+"] 打开 "+u);
+            addHist(u);
+        }catch(Exception e){ addLog("浏览器打开失败 "+b[0]); toast("该浏览器不可用，再点一次换下一个"); }
+    }
+    java.util.List<String[]> webBrowsers(){
+        java.util.List<String[]> out=new java.util.ArrayList<String[]>();
+        try{
+            Intent v=new Intent(Intent.ACTION_VIEW,Uri.parse("https://example.com"));
+            java.util.List<ResolveInfo> ri=getPackageManager().queryIntentActivities(v,PackageManager.MATCH_ALL);
+            // Chrome 优先
+            for(ResolveInfo r:ri){
+                String p=r.activityInfo.packageName;
+                if("com.android.chrome".equals(p)){ out.add(0,new String[]{p,r.activityInfo.name}); break; }
+            }
+            for(ResolveInfo r:ri){
+                String p=r.activityInfo.packageName;
+                if(p.equals(getPackageName())) continue;         // 排除自身(默认浏览器处理器)
+                if("com.zy.ai.browser".equals(p)) continue;       // 已被管控拉黑
+                if("com.android.chrome".equals(p)) continue;      // 已放首位
+                out.add(new String[]{p,r.activityInfo.name});
+            }
+        }catch(Exception e){}
+        return out;
+    }
     void paste(){ try{ ClipboardManager cm=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE); if(cm!=null&&cm.hasPrimaryClip()&&cm.getPrimaryClip()!=null&&cm.getPrimaryClip().getItemAt(0)!=null){ CharSequence t=cm.getPrimaryClip().getItemAt(0).coerceToText(this); if(t!=null)urlInput.setText(t.toString().trim()); } else toast("剪贴板为空"); }catch(Exception e){toast("读取失败");} }
     String norm(String raw){ if(raw==null||raw.length()==0)return null; String s=raw.trim(); if(!s.startsWith("http://")&&!s.startsWith("https://"))s="https://"+s; return s; }
     ColorMatrix sat(float v){ ColorMatrix m=new ColorMatrix(); m.setSaturation(v); return m; }
+    void loadHist(){
+        hist.clear();
+        try{
+            String saved=prefs.getString("hist","");
+            if(saved!=null&&saved.length()>0){
+                String[] arr=saved.split("\n");
+                for(int i=0;i<arr.length;i++){ if(arr[i].trim().length()>0) hist.add(arr[i]); }
+            }
+        }catch(Exception e){}
+    }
+    void addHist(String url){
+        try{
+            if(url==null||url.length()==0) return;
+            hist.remove(url);
+            hist.add(0,url);
+            while(hist.size()>6) hist.remove(hist.size()-1);
+            StringBuilder sb=new StringBuilder();
+            for(String h:hist) sb.append(h).append("\n");
+            prefs.edit().putString("hist",sb.toString()).commit();
+            refreshHist();
+        }catch(Exception e){}
+    }
+    void refreshHist(){
+        if(histRow==null) return;
+        histRow.removeAllViews();
+        if(hist.isEmpty()){
+            TextView e=new TextView(this); e.setText("（暂无记录）"); e.setTextColor(0x88FFFFFF); e.setTextSize(11);
+            histRow.addView(e); return;
+        }
+        for(int i=0;i<hist.size();i++){
+            final String u=hist.get(i);
+            String show=u.replace("https://","").replace("http://","");
+            if(show.length()>14) show=show.substring(0,14)+"…";
+            Btn b=gbtn(show,shp(10,0x2EFFFFFF),new View.OnClickListener(){public void onClick(View v){ openWeb(u); }});
+            b.setTextSize(11);
+            LinearLayout.LayoutParams blp=new LinearLayout.LayoutParams(-2,-2);
+            if(i>0){ blp.leftMargin=dp(6); } blp.rightMargin=0;
+            histRow.addView(b,blp);
+        }
+    }
     void clearLog(){
         logLines.clear();
         try{ prefs.edit().remove("runlog").commit(); }catch(Exception e){}
