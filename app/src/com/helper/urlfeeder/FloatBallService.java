@@ -32,6 +32,9 @@ public class FloatBallService extends Service {
     private boolean menuVisible=false;
     private int w,h; // 屏幕
     public static volatile boolean running=false;
+    private static FloatBallService inst;
+    // 收起悬浮菜单(避免遮挡其它界面按钮)
+    public static void collapseMenu(){ try{ if(inst!=null) inst.hideMenu(); }catch(Exception e){} }
     private Handler hd=new Handler();
 
     public static boolean overlayOk(Context c){
@@ -42,7 +45,7 @@ public class FloatBallService extends Service {
 
     public int onStartCommand(Intent i,int f,int s){
         Log.i("FloatBall","onStartCommand ball="+(ball!=null)+" overlayOk="+FloatBallService.overlayOk(this));
-        running=true;
+        running=true; inst=this;
         try{
             String a=i==null?null:i.getAction();
             if("reload".equals(a)&&ball!=null){
@@ -284,6 +287,7 @@ public class FloatBallService extends Service {
     }
     public void onDestroy(){
         running=false;
+        if(inst==this) inst=null;
         super.onDestroy();
     }
     int dp(int v){ return (int)(v*getResources().getDisplayMetrics().density+0.5f); }

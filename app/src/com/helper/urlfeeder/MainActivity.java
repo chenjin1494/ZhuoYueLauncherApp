@@ -128,6 +128,8 @@ public class MainActivity extends Activity {
         }catch(Exception e){}
     }
 
+    protected void onResume(){ super.onResume(); try{ com.helper.urlfeeder.FloatBallService.collapseMenu(); }catch(Exception e){} }
+    protected void onPause(){ super.onPause(); }
     int dp(int v){ return (int)(v*getResources().getDisplayMetrics().density+0.5f); }
     // 玻璃透明度档位 0..4 → 各层白色强度缩放系数
     float glassS(){ int l=prefs.getInt("ga",2);
@@ -456,14 +458,14 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.bottomMargin=dp(6); b.setLayoutParams(lp); return b; }
 
 
-    void openAbout(){ if(aboutPage==null) buildAbout(); try{ aboutPage.bringToFront(); }catch(Exception e){} aboutPage.setVisibility(View.VISIBLE); }
+    void openAbout(){ try{ com.helper.urlfeeder.FloatBallService.collapseMenu(); }catch(Exception e){} if(aboutPage==null) buildAbout(); try{ aboutPage.bringToFront(); }catch(Exception e){} aboutPage.setVisibility(View.VISIBLE); }
     void closeAbout(){ if(aboutPage!=null) aboutPage.setVisibility(View.GONE); }
     // ---------- 设备自检页 ----------
     LinearLayout checkBody;
     LinearLayout floatOrderList;
     String[] FO_ID={"back","home","app","recent","net"};
     String[] FO_NAME={"◀ 返回","● 主页","🧰 打开主界面","▦ 最近","🔓 开网"};
-    void openCheck(){ if(checkPage==null) buildCheck(); try{ checkPage.bringToFront(); }catch(Exception e){} checkPage.setVisibility(View.VISIBLE); refreshCheck(); }
+    void openCheck(){ try{ com.helper.urlfeeder.FloatBallService.collapseMenu(); }catch(Exception e){} if(checkPage==null) buildCheck(); try{ checkPage.bringToFront(); }catch(Exception e){} checkPage.setVisibility(View.VISIBLE); refreshCheck(); }
     void closeCheck(){ if(checkPage!=null) checkPage.setVisibility(View.GONE); }
     void buildCheck(){
         if(rootF==null) return;
@@ -1041,8 +1043,38 @@ public class MainActivity extends Activity {
         refreshFloatOrder();
         toast("已添加:「"+label+"」到悬浮球菜单");
     }
+
+    void askCustomName(final String defLabel,final String pkg){
+        try{
+            final EditText et=new EditText(this);
+            et.setHint("自定义名称（留空用应用原名）");
+            et.setText(defLabel);
+            et.setTextSize(15); et.setTextColor(Color.WHITE); et.setHintTextColor(0xAAFFFFFF);
+            et.setBackground(shp(12,0x66000000)); et.setPadding(dp(12),dp(8),dp(12),dp(8));
+            LinearLayout host=new LinearLayout(this); host.setOrientation(LinearLayout.VERTICAL);
+            host.setPadding(dp(2),dp(8),dp(2),0);
+            host.addView(et,new LinearLayout.LayoutParams(-1,-2));
+            final android.app.AlertDialog dlg=new android.app.AlertDialog.Builder(this)
+                .setTitle("添加到悬浮球菜单")
+                .setMessage("应用: "+defLabel+"\n可自定义按钮名称")
+                .setView(host)
+                .setPositiveButton("添加",null)
+                .setNegativeButton("取消",null)
+                .create();
+            dlg.setOnShowListener(new android.content.DialogInterface.OnShowListener(){ public void onShow(android.content.DialogInterface d){
+                dlg.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener(){ public void onClick(View v){
+                    String nm=et.getText()==null?"":et.getText().toString().trim();
+                    if(nm.length()==0) nm=defLabel;
+                    try{ dlg.dismiss(); }catch(Exception e){}
+                    addCustomApp(nm,pkg);
+                }});
+            }});
+            dlg.show();
+        }catch(Exception e){ addCustomApp(defLabel,pkg); }
+    }
     void pickCustomApp(){
         try{
+            try{ com.helper.urlfeeder.FloatBallService.collapseMenu(); }catch(Exception e){}
             // 弹应用选择对话框
             final android.app.Dialog d=new android.app.Dialog(this);
             d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
@@ -1066,8 +1098,11 @@ public class MainActivity extends Activity {
                 }
                 Collections.sort(apps,new Comparator<String[]>(){public int compare(String[] a,String[] b){return a[0].compareToIgnoreCase(b[0]);}});
                 for(final String[] a:apps){
-                    Btn b=gbtn(a[0],glass(),new View.OnClickListener(){public void onClick(View v){ try{ d.dismiss(); }catch(Exception e){} addCustomApp(a[0],a[1]); }});
+                    Btn b=gbtn(a[0],glass(),new View.OnClickListener(){public void onClick(View v){ try{ d.dismiss(); }catch(Exception e){} askCustomName(a[0],a[1]); }});
                     b.setTextSize(13); b.setGravity(Gravity.LEFT|Gravity.CENTER_VERTICAL);
+                    LinearLayout.LayoutParams blp=new LinearLayout.LayoutParams(-1,-2);
+                    blp.bottomMargin=dp(2);
+                    b.setLayoutParams(blp);
                     list.addView(b);
                 }
             }catch(Exception e){}
