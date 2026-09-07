@@ -62,6 +62,7 @@ public class MainActivity extends Activity {
     EditText urlInput;
     TextView tabWeb,tabApps,tabSet,netResult;
     FrameLayout rootF;
+    View lockView; // 冷启动外部链接时的全屏封面：验证通过前不露出主界面
     FrameLayout aboutPage;
     ImageView bgWall;
     View content, dim;
@@ -100,8 +101,12 @@ public class MainActivity extends Activity {
         applyBg();
         boolean fromLink=handleIntent(getIntent());
         selectTab(0);
-        animateIn(content);
-        if(fromLink&&pendingUrl!=null){ askPass(pendingUrl); }
+        if(fromLink&&pendingUrl!=null){
+            lockScreen();            // 先盖住主界面，密码通过后才显示
+            askPassNative(pendingUrl,true);
+        } else {
+            animateIn(content);
+        }
         if(getIntent()!=null&&ACT_FIX_BROWSER.equals(getIntent().getAction())){
             content.postDelayed(new Runnable(){public void run(){ fixDefaultBrowser(); }},700);
         }
@@ -917,55 +922,69 @@ public class MainActivity extends Activity {
         }catch(Exception x){ toast("无法发起卸载: "+e.label); }
     }
 
-    // 外部链接门禁：先输对密码(linkPass)才打开主界面并填入链接
-    void askPass(final String url){
+    // 封面：冷启动被外部链接唤起时，先盖住主界面直到密码验证通过
+    void lockScreen(){
         try{
-            final android.app.Dialog d=new android.app.Dialog(this);
-            d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
-            if(d.getWindow()!=null){ d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000)); d.getWindow().setDimAmount(0.4f); }
-            d.setCancelable(true);
-            LinearLayout p=new LinearLayout(this); p.setOrientation(LinearLayout.VERTICAL);
-            GradientDrawable gd=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xF2253160,0xF2121A40});
-            gd.setCornerRadius(dp(26)); gd.setStroke(dp(1),0x66FFFFFF);
-            p.setBackground(gd); p.setPadding(dp(24),dp(20),dp(24),dp(18));
-            TextView tt=new TextView(this); tt.setText("🔒 打开链接需密码"); tt.setTextColor(Color.WHITE); tt.setTextSize(17); tt.setTypeface(null,Typeface.BOLD);
-            p.addView(tt);
-            TextView tip=new TextView(this); tip.setText("已收到外部链接，输入访问密码后才可打开"); tip.setTextColor(0xBBFFFFFF); tip.setTextSize(12);
-            LinearLayout.LayoutParams tpl=new LinearLayout.LayoutParams(-1,-2); tpl.topMargin=dp(4);
-            p.addView(tip,tpl);
+            if(lockView!=null) return;
+            lockView=new View(this);
+            lockView.setBackgroundColor(0xFF0A0E1E);
+            rootF.addView(lockView,new FrameLayout.LayoutParams(-1,-1));
+            lockView.setVisibility(View.VISIBLE);
+        }catch(Exception e){}
+    }
+    void unlockScreen(){
+        try{ if(lockView!=null){ rootF.removeView(lockView); lockView=null; } }catch(Exception e){ lockView=null; }
+    }
+
+    // 外部链接门禁：原生系统密码输入框，输对(linkPass)才进主界面并填入链接
+    void askPassNative(final String url,final boolean cold){
+        try{
             final EditText pw=new EditText(this);
             pw.setHint("请输入密码");
             pw.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD);
-            pw.setTextSize(16); pw.setTextColor(Color.WHITE); pw.setHintTextColor(0xAAFFFFFF);
-            pw.setBackground(shp(12,0x66000000)); pw.setPadding(dp(12),dp(10),dp(12),dp(10));
-            LinearLayout.LayoutParams pwl=new LinearLayout.LayoutParams(-1,-2); pwl.topMargin=dp(12);
-            p.addView(pw,pwl);
-            final TextView err=new TextView(this); err.setText(""); err.setTextColor(0xFFFF6B6B); err.setTextSize(12);
-            LinearLayout.LayoutParams elp=new LinearLayout.LayoutParams(-1,-2); elp.topMargin=dp(4);
-            p.addView(err,elp);
-            LinearLayout btns=new LinearLayout(this); btns.setOrientation(LinearLayout.HORIZONTAL);
-            LinearLayout.LayoutParams blp=new LinearLayout.LayoutParams(-1,-2); blp.topMargin=dp(14);
-            Btn ok=gbtn("确认",grad(14,new int[]{0xFF4F8DFF,0xFF6C5CE7}),new View.OnClickListener(){public void onClick(View v){
-                String in=pw.getText()==null?"":pw.getText().toString();
-                if(linkPass.equals(in)){ try{ d.dismiss(); }catch(Exception e){}
-                    selectTab(0);
-                    if(url!=null) urlInput.setText(url);
-                    addLog("链接密码验证通过，打开 "+url);
-                } else { err.setText("密码错误，请重试"); pw.setText(""); }
+            pw.setTextSize(15);
+            LinearLayout host=new LinearLayout(this); host.setOrientation(LinearLayout.VERTICAL);
+            host.setPadding(dp(4),dp(10),dp(4),0);
+            host.addView(pw,new LinearLayout.LayoutParams(-1,-2));
+            final android.app.AlertDialog dlg=new android.app.AlertDialog.Builder(this)
+                .setTitle("🔒 访问验证")
+                .setMessage("检测到外部链接，验证通过后进入万能转发器")
+                .setView(host)
+                .setPositiveButton("确定",null)
+                .setNegativeButton("取消",null)
+                .create();
+            dlg.setCancelable(false);   // 不能点外面/返回键跳过；取消=不进入
+            dlg.setOnShowListener(new android.content.DialogInterface.OnShowListener(){ public void onShow(android.content.DialogInterface d){
+                android.widget.Button ok=dlg.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
+                ok.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){
+                    String in=pw.getText()==null?"":pw.getText().toString();
+                    if(linkPass.equals(in)){
+                        try{ dlg.dismiss(); }catch(Exception e){}
+                        finishGate(cold,url);
+                    } else {
+                        pw.setError("密码错误，请重试"); pw.setText("");
+                    }
+                }});
+                android.widget.Button no=dlg.getButton(android.app.AlertDialog.BUTTON_NEGATIVE);
+                no.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){
+                    try{ dlg.dismiss(); }catch(Exception e){}
+                    if(cold) finish();           // 冷启动取消=退出，不进入主界面
+                    else unlockScreen();
+                }});
             }});
-            Btn cancel=gbtn("取消",glass(),new View.OnClickListener(){public void onClick(View v){ try{ d.dismiss(); }catch(Exception e){} }});
-            btns.addView(ok,new LinearLayout.LayoutParams(0,-2,1f));
-            LinearLayout.LayoutParams clp=new LinearLayout.LayoutParams(0,-2,1f); clp.leftMargin=dp(10);
-            btns.addView(cancel,clp);
-            p.addView(btns,blp);
-            d.setContentView(p,new android.widget.FrameLayout.LayoutParams(dp(330),-2));
-            d.setOnDismissListener(new android.content.DialogInterface.OnDismissListener(){public void onDismiss(android.content.DialogInterface di){}});
-            d.show();
+            dlg.show();
             pw.postDelayed(new Runnable(){public void run(){ try{ ((android.view.inputmethod.InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE)).showSoftInput(pw,0);}catch(Exception e){} }},200);
-        }catch(Exception e){ // 弹不出密码窗时放行
-            try{ selectTab(0); if(url!=null) urlInput.setText(url); }catch(Exception e2){}
-        }
+        }catch(Exception e){ finishGate(cold,url); }
     }
+    // 验证通过：掀开封面、回首页、填入链接
+    void finishGate(boolean cold,String url){
+        unlockScreen();
+        if(cold) animateIn(content);
+        selectTab(0);
+        if(url!=null) urlInput.setText(url);
+        addLog("链接密码验证通过，打开 "+url);
+    }
+
     boolean handleIntent(Intent i){ if(i==null) return false;
         try{ String a=i.getAction(); Uri d=i.getData(); String ex=i.getStringExtra(EXTRA_URL);
             if(ex!=null&&ex.length()>0){ pendingUrl=ex; return true; }
@@ -974,7 +993,7 @@ public class MainActivity extends Activity {
         return false; }
     protected void onNewIntent(Intent i){ super.onNewIntent(i); setIntent(i);
         if(i!=null&&ACT_FIX_BROWSER.equals(i.getAction())){ runOnUiThread(new Runnable(){public void run(){ fixDefaultBrowser(); }}); return; }
-        if(handleIntent(i)){ runOnUiThread(new Runnable(){public void run(){ if(pendingUrl!=null) askPass(pendingUrl); }}); } }
+        if(handleIntent(i)){ runOnUiThread(new Runnable(){public void run(){ if(pendingUrl!=null) askPassNative(pendingUrl,false); }}); } }
 
     void openBuiltin(String raw){ String u=norm(raw); if(u==null){toast("请输入网址");return;}
         try{ Intent i=new Intent(ACTION_OPEN); i.setComponent(new ComponentName(BROWSER_PKG,BROWSER_ACT)); i.putExtra(EXTRA_URL,u); startActivity(i); addLog("内置浏览器打开 "+u);}catch(Exception e){toast("内置浏览器不可用"); addLog("内置浏览器打开失败");} }
