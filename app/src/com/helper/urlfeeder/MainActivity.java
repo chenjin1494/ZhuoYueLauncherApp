@@ -430,6 +430,11 @@ public class MainActivity extends Activity {
         settingsBody.addView(gap(6));
         settingsBody.addView(secOpt(fbok?"🟢 启动悬浮球（退出App也常驻）":"🔑 授权悬浮窗",new Runnable(){public void run(){ if(fbok){ startFloatBall(); } else { requestOverlay(); } }}));
         settingsBody.addView(secOpt("⏹ 停止悬浮球",new Runnable(){public void run(){ stopFloatBall(); }}));
+        settingsBody.addView(gap(4));
+        settingsBody.addView(secTitle("📝 悬浮球菜单排序（▲上移 ▼下移，即时生效）"));
+        floatOrderList=new LinearLayout(this); floatOrderList.setOrientation(LinearLayout.VERTICAL);
+        settingsBody.addView(floatOrderList);
+        refreshFloatOrder();
         settingsBody.addView(gap(6));
         settingsBody.addView(secTitle("⚡ 默认应用 / 工具"));
         settingsBody.addView(secOpt("🌐 设为默认浏览器（守护会保持，需授权一次）",new Runnable(){public void run(){fixDefaultBrowser();}}));
@@ -454,6 +459,9 @@ public class MainActivity extends Activity {
     void closeAbout(){ if(aboutPage!=null) aboutPage.setVisibility(View.GONE); }
     // ---------- 设备自检页 ----------
     LinearLayout checkBody;
+    LinearLayout floatOrderList;
+    String[] FO_ID={"back","home","app","recent","net"};
+    String[] FO_NAME={"◀ 返回","● 主页","🧰 打开主界面","▦ 最近","🔓 开网"};
     void openCheck(){ if(checkPage==null) buildCheck(); try{ checkPage.bringToFront(); }catch(Exception e){} checkPage.setVisibility(View.VISIBLE); refreshCheck(); }
     void closeCheck(){ if(checkPage!=null) checkPage.setVisibility(View.GONE); }
     void buildCheck(){
@@ -903,6 +911,66 @@ public class MainActivity extends Activity {
     }
     void stopFloatBall(){
         try{ Intent s=new Intent(this,FloatBallService.class); stopService(s); prefs.edit().putBoolean("float_on",false).commit(); toast("悬浮球已停止"); addLog("悬浮球已停止"); }catch(Exception e){}
+    }
+    java.util.List<String> floatOrder(){
+        java.util.List<String> ord=new java.util.ArrayList<String>();
+        String saved=prefs.getString("float_order",null);
+        if(saved!=null&&saved.length()>0){
+            String[] arr=saved.split(",");
+            for(String x:arr){ if(x!=null&&x.trim().length()>0) ord.add(x.trim()); }
+        }
+        for(String id:FO_ID){ if(!ord.contains(id)) ord.add(id); }
+        return ord;
+    }
+    void saveFloatOrder(java.util.List<String> ord){
+        StringBuilder sb=new StringBuilder();
+        for(String x:ord){ sb.append(x).append(","); }
+        prefs.edit().putString("float_order",sb.toString()).commit();
+        // 通知悬浮球热重载
+        try{ Intent s=new Intent(this,FloatBallService.class); s.setAction("reload"); startService(s); }catch(Exception e){}
+    }
+    void refreshFloatOrder(){
+        if(floatOrderList==null) return;
+        floatOrderList.removeAllViews();
+        java.util.List<String> ord=floatOrder();
+        for(int i=0;i<ord.size();i++){
+            final int pos=i;
+            String id=ord.get(i);
+            String nm=id;
+            for(int k=0;k<FO_ID.length;k++){ if(FO_ID[k].equals(id)){ nm=FO_NAME[k]; break; } }
+            if("close".equals(id)) nm="✕ 关闭悬浮球（固定末位）";
+            LinearLayout row=new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setBackground(glass()); row.setPadding(dp(10),dp(4),dp(6),dp(4));
+            TextView lb=new TextView(this); lb.setText((pos+1)+". "+nm); lb.setTextColor(0xEFFFFFFF); lb.setTextSize(13);
+            row.addView(lb,new LinearLayout.LayoutParams(0,-2,1f));
+            if(!("close".equals(id))){
+                Btn up=gbtn("▲",shp(10,0x2EFFFFFF),new View.OnClickListener(){public void onClick(View v){ moveFloatItem(pos,-1); }});
+                up.setTextSize(11); row.addView(up,new LinearLayout.LayoutParams(-2,-2));
+            }
+            if(pos<ord.size()-1){
+                Btn dn=gbtn("▼",shp(10,0x2EFFFFFF),new View.OnClickListener(){public void onClick(View v){ moveFloatItem(pos,1); }});
+                dn.setTextSize(11);
+                LinearLayout.LayoutParams dlp=new LinearLayout.LayoutParams(-2,-2); dlp.leftMargin=dp(4);
+                row.addView(dn,dlp);
+            }
+            LinearLayout.LayoutParams rlp=new LinearLayout.LayoutParams(-1,-2); if(pos>0) rlp.topMargin=dp(4);
+            floatOrderList.addView(row,rlp);
+        }
+    }
+    void moveFloatItem(int pos,int dir){
+        java.util.List<String> ord=floatOrder();
+        int to=pos+dir;
+        if(to<0||to>=ord.size()) return;
+        if("close".equals(ord.get(to))&&dir>0) return;      // close 不可插入(保持在末)
+        String id=ord.remove(pos);
+        if(dir<0&&"close".equals(ord.get(0))) { // 不移到 close 前? close 恒末, 直接放其前位置 to
+        }
+        if(to>=ord.size()) ord.add(id); else ord.add(to,id);
+        // close 固定末尾
+        if(ord.contains("close")){ ord.remove("close"); ord.add("close"); }
+        saveFloatOrder(ord);
+        refreshFloatOrder();
+        toast("已调整，悬浮球菜单已更新");
     }
     void requestOverlay(){
         try{
