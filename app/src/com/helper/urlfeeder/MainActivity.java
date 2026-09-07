@@ -897,11 +897,12 @@ public class MainActivity extends Activity {
             }
             Intent s=new Intent(this,FloatBallService.class);
             startService(s);
-            toast("悬浮球已启动"); addLog("悬浮球导航已启动");
+            prefs.edit().putBoolean("float_on",true).commit();
+            toast("悬浮球已启动（开机也会自动开启）"); addLog("悬浮球导航已启动");
         }catch(Exception e){ toast("启动失败:"+e.getMessage()); }
     }
     void stopFloatBall(){
-        try{ Intent s=new Intent(this,FloatBallService.class); stopService(s); toast("悬浮球已停止"); addLog("悬浮球已停止"); }catch(Exception e){}
+        try{ Intent s=new Intent(this,FloatBallService.class); stopService(s); prefs.edit().putBoolean("float_on",false).commit(); toast("悬浮球已停止"); addLog("悬浮球已停止"); }catch(Exception e){}
     }
     void requestOverlay(){
         try{
