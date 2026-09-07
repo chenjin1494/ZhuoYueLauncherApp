@@ -85,6 +85,13 @@ public class GuardService extends Service {
             h.removeCallbacks(ticker);
             h.postDelayed(ticker,1000);
         }
+        // 开机/守护启动后：若开启过悬浮球则一并拉起(进程已在前台, 不受后台限制)
+        try{
+            if(prefs.getBoolean("float_on",false) && !FloatBallService.running){
+                Intent fb=new Intent(this,FloatBallService.class);
+                startService(fb);
+            }
+        }catch(Exception e){}
         return START_STICKY;
     }
 

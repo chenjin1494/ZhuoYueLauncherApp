@@ -31,6 +31,7 @@ public class FloatBallService extends Service {
     private WindowManager.LayoutParams menuLp;
     private boolean menuVisible=false;
     private int w,h; // 屏幕
+    public static volatile boolean running=false;
     private Handler hd=new Handler();
 
     public static boolean overlayOk(Context c){
@@ -41,6 +42,7 @@ public class FloatBallService extends Service {
 
     public int onStartCommand(Intent i,int f,int s){
         Log.i("FloatBall","onStartCommand ball="+(ball!=null)+" overlayOk="+FloatBallService.overlayOk(this));
+        running=true;
         try{
             if(ball==null) createBall();
             Log.i("FloatBall","after createBall ball="+(ball!=null));
@@ -107,12 +109,12 @@ public class FloatBallService extends Service {
         addMenuItem("🔓 开网",new Runnable(){public void run(){ fireOpenNet(); hideMenu(); }});
         addMenuItem("✕ 关闭悬浮球",new Runnable(){public void run(){ hideMenu(); stopBall(); }});
         menuLp=new WindowManager.LayoutParams(
-            dp(130),WindowManager.LayoutParams.WRAP_CONTENT,
+            dp(140),WindowManager.LayoutParams.WRAP_CONTENT,
             Build.VERSION.SDK_INT>=26?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT);
         menuLp.gravity=Gravity.TOP|Gravity.START;
-        menuLp.x=ballLp.x-dp(10); menuLp.y=ballLp.y-dp(52)-dp(42)*6;
+        menuLp.x=ballLp.x+dp(52); menuLp.y=Math.max(dp(40),ballLp.y-dp(42)*6);
         try{ wm.addView(menu,menuLp); Log.i("FloatBall","menu added"); }catch(Exception e){ Log.e("FloatBall","add menu fail",e);}
     }
 
@@ -134,11 +136,16 @@ public class FloatBallService extends Service {
         if(menu==null) return;
         menu.setVisibility(show?View.VISIBLE:View.GONE);
         if(show){
-            // 菜单位置跟随球
-            menuLp.x=ballLp.x-dp(6);
-            menuLp.y=ballLp.y-dp(56)-dp(42)*6;
-            if(menuLp.y<dp(10)) menuLp.y=dp(10);
-            if(menuLp.x<0) menuLp.x=dp(10);
+            int mw=dp(140);
+            int mh=menu.getChildCount()*dp(48)+dp(16);   // 估算菜单高度
+            if(mh>h-dp(20)) mh=h-dp(20);
+            int gx=ballLp.x+dp(46)+dp(8);                 // 默认放球右侧
+            int gy=ballLp.y+ballLp.height/2-mh/2;
+            // 右侧放不下放左侧
+            if(gx+mw>w-dp(8)) gx=ballLp.x-dp(8)-mw;
+            if(gy<mh/2+dp(8)) gy=dp(8);                    // 顶部裁剪则贴顶
+            if(gy+mh>h-dp(8)) gy=h-dp(8)-mh;               // 底部裁剪则贴底
+            menuLp.x=gx; menuLp.y=gy;
             try{ wm.updateViewLayout(menu,menuLp); }catch(Exception e){}
         }
     }
@@ -208,12 +215,14 @@ public class FloatBallService extends Service {
         }catch(Exception e){}
     }
     void stopBall(){
+        running=false;
+        try{ getSharedPreferences("pf",0).edit().putBoolean("float_on",false).commit(); }catch(Exception e){}
         try{ if(ball!=null){ wm.removeView(ball); ball=null; } }catch(Exception e){}
         try{ if(menu!=null){ wm.removeView(menu); menu=null; } }catch(Exception e){}
         stopSelf();
     }
     public void onDestroy(){
-        stopBall();
+        running=false;
         super.onDestroy();
     }
     int dp(int v){ return (int)(v*getResources().getDisplayMetrics().density+0.5f); }
