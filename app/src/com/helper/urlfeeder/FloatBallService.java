@@ -102,6 +102,7 @@ public class FloatBallService extends Service {
         menu.setVisibility(View.GONE);
         addMenuItem("◀ 返回",new Runnable(){public void run(){ shellKey("4"); hideMenu(); }});
         addMenuItem("● 主页",new Runnable(){public void run(){ goHome(); hideMenu(); }});
+        addMenuItem("🧰 打开主界面",new Runnable(){public void run(){ openApp(); hideMenu(); }});
         addMenuItem("▦ 最近",new Runnable(){public void run(){ shellKey("187"); hideMenu(); }});
         addMenuItem("🔓 开网",new Runnable(){public void run(){ fireOpenNet(); hideMenu(); }});
         addMenuItem("✕ 关闭悬浮球",new Runnable(){public void run(){ hideMenu(); stopBall(); }});
@@ -111,7 +112,7 @@ public class FloatBallService extends Service {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT);
         menuLp.gravity=Gravity.TOP|Gravity.START;
-        menuLp.x=ballLp.x-dp(10); menuLp.y=ballLp.y-dp(52)-dp(46)*5;
+        menuLp.x=ballLp.x-dp(10); menuLp.y=ballLp.y-dp(52)-dp(42)*6;
         try{ wm.addView(menu,menuLp); Log.i("FloatBall","menu added"); }catch(Exception e){ Log.e("FloatBall","add menu fail",e);}
     }
 
@@ -135,7 +136,7 @@ public class FloatBallService extends Service {
         if(show){
             // 菜单位置跟随球
             menuLp.x=ballLp.x-dp(6);
-            menuLp.y=ballLp.y-dp(56)-dp(52)*5;
+            menuLp.y=ballLp.y-dp(56)-dp(42)*6;
             if(menuLp.y<dp(10)) menuLp.y=dp(10);
             if(menuLp.x<0) menuLp.x=dp(10);
             try{ wm.updateViewLayout(menu,menuLp); }catch(Exception e){}
@@ -143,6 +144,16 @@ public class FloatBallService extends Service {
     }
     void hideMenu(){ if(menuVisible){ menuVisible=false; showMenu(false);} }
 
+    void openApp(){
+        // 打开万能转发器主界面(回到首页)
+        try{
+            Intent a=new Intent(this,MainActivity.class);
+            a.setAction("com.helper.urlfeeder.action.OPEN_MAIN");
+            a.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(a);
+            Log.i("FloatBall","openApp sent");
+        }catch(Exception e){ Log.e("FloatBall","openApp fail",e);}
+    }
     void goHome(){
         // 主页：直接启动 Lawnchair（卓越Launcher 作为 HOME 时会关 ADB，必须绕开它）
         try{
