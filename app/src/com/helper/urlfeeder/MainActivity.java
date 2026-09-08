@@ -434,6 +434,24 @@ public class MainActivity extends Activity {
         settingsBody.addView(gap(6));
         settingsBody.addView(secOpt(fbok?"🟢 启动悬浮球（退出App也常驻）":"🔑 授权悬浮窗",new Runnable(){public void run(){ if(fbok){ startFloatBall(); } else { requestOverlay(); } }}));
         settingsBody.addView(secOpt("⏹ 停止悬浮球",new Runnable(){public void run(){ stopFloatBall(); }}));
+        settingsBody.addView(gap(6));
+        settingsBody.addView(secTitle("🎨 悬浮球外观（大小·点选即时生效）"));
+        int effSz=prefs.getInt("float_size",0); if(effSz<=0) effSz=46;
+        int[] szs={36,46,56,68};
+        String[] szn={"小","中","大","特大"};
+        LinearLayout szRow=new LinearLayout(this); szRow.setOrientation(LinearLayout.HORIZONTAL);
+        for(int i=0;i<szs.length;i++){
+            final int d=szs[i];
+            boolean sel=(effSz==d);
+            Btn b=gbtn((sel?"● ":"○ ")+szn[i]+" "+d,
+                sel?grad(12,new int[]{0xFF4A7DFF,0xFF1E3A8A}):glass(),
+                new View.OnClickListener(){public void onClick(View v){ setFloatSize(d); }});
+            b.setTextSize(12);
+            LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(0,-2,1f);
+            if(i>0) bp.leftMargin=dp(4);
+            szRow.addView(b,bp);
+        }
+        settingsBody.addView(szRow);
         settingsBody.addView(gap(4));
         settingsBody.addView(secTitle("📝 悬浮球菜单排序（▲上移 ▼下移，即时生效）"));
         settingsBody.addView(secOpt("➕ 添加要打开的应用",new Runnable(){public void run(){ pickCustomApp(); }}));
@@ -940,6 +958,16 @@ public class MainActivity extends Activity {
     }
     void stopFloatBall(){
         try{ Intent s=new Intent(this,FloatBallService.class); stopService(s); prefs.edit().putBoolean("float_on",false).commit(); toast("悬浮球已停止"); addLog("悬浮球已停止"); }catch(Exception e){}
+    }
+    void setFloatSize(int d){
+        try{
+            prefs.edit().putInt("float_size",d).commit();
+            if(FloatBallService.running){
+                try{ Intent s=new Intent(this,FloatBallService.class); s.setAction("resize"); startService(s); }catch(Exception e){}
+            }
+            toast("悬浮球大小 → "+d); addLog("悬浮球大小 → "+d);
+            buildSettings();   // 重建设置页刷新选中态
+        }catch(Exception e){ toast("设置失败"); }
     }
     java.util.List<String> floatOrder(){
         java.util.List<String> ord=new java.util.ArrayList<String>();

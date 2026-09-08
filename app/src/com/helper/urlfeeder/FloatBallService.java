@@ -35,6 +35,8 @@ public class FloatBallService extends Service {
     private static FloatBallService inst;
     // 吸附动画(拖动松手平滑滑向左右边缘)
     private android.animation.ValueAnimator snapAnim=null;
+    private int ballSz=0;          // 悬浮球当前像素尺寸
+    private TextView ballTv=null;  // 球面图标
     // 收起悬浮菜单(避免遮挡其它界面按钮)
     public static void collapseMenu(){ try{ if(inst!=null) inst.hideMenu(); }catch(Exception e){} }
     private Handler hd=new Handler();
@@ -60,6 +62,20 @@ public class FloatBallService extends Service {
                 Log.i("FloatBall","menu reloaded h="+menuLp.height+" rows="+menu.getChildCount());
                 return START_STICKY;
             }
+            if("resize".equals(a)&&ball!=null){
+                // 悬浮球大小变更(设置里选完即时生效, 保持球心不动)
+                try{
+                    if(snapAnim!=null){ snapAnim.cancel(); snapAnim=null; }
+                    int oldW=Math.max(1,ballLp.width);
+                    styleBall();                     // 读取 pref float_size 重做外观
+                    ballLp.x+=(oldW-ballSz)/2;       // 保持球心
+                    ballLp.y+=(oldW-ballSz)/2;
+                    clampBallOnScreen();
+                    wm.updateViewLayout(ball,ballLp);
+                    Log.i("FloatBall","resize ballSz="+ballSz+" x="+ballLp.x+" y="+ballLp.y);
+                }catch(Exception e){ Log.e("FloatBall","resize err",e); }
+                return START_STICKY;
+            }
             if(ball==null) createBall();
             Log.i("FloatBall","after createBall ball="+(ball!=null));
         }catch(Exception e){ Log.e("FloatBall","start err",e); stopSelf(); }
@@ -70,25 +86,22 @@ public class FloatBallService extends Service {
         wm=(WindowManager)getSystemService(WINDOW_SERVICE);
         w=wm.getDefaultDisplay().getWidth(); h=wm.getDefaultDisplay().getHeight();
 
+        ballSz=dp(prefBallSize());
         ball=new LinearLayout(this);
         ball.setOrientation(LinearLayout.VERTICAL);
         ball.setGravity(Gravity.CENTER);
-        GradientDrawable bg=new GradientDrawable();
-        bg.setShape(GradientDrawable.OVAL);
-        bg.setColor(0xCC223355);
-        bg.setStroke(dp(1),0x99FFFFFF);
-        ball.setBackground(bg);
-        TextView tv=new TextView(this);
-        tv.setText("◉");
-        tv.setTextColor(0xFFFFFFFF); tv.setTextSize(18);
-        ball.addView(tv);
+        ballTv=new TextView(this);
+        ballTv.setText("◉");
+        ballTv.setTextColor(0xFFFFFFFF);
+        ball.addView(ballTv);
         ballLp=new WindowManager.LayoutParams(
-            dp(46),dp(46),
+            ballSz,ballSz,
             Build.VERSION.SDK_INT>=26?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT);
         ballLp.gravity=Gravity.TOP|Gravity.START;
         ballLp.x=w-dp(60); ballLp.y=h-dp(160);
+        styleBall();   // 渐变外观 + 字号
         ball.setOnTouchListener(new View.OnTouchListener(){
             float dx,dy; long downT;
             public boolean onTouch(View v,android.view.MotionEvent e){
@@ -125,6 +138,36 @@ public class FloatBallService extends Service {
         menuLp.height=menuContentHeight();   // 固定像素高,避免WRAP+GONE测量卡在矮高度
         Log.i("FloatBall","createBall menu h="+menuLp.height+" rows="+menu.getChildCount());
         try{ wm.addView(menu,menuLp); Log.i("FloatBall","menu added"); }catch(Exception e){ Log.e("FloatBall","add menu fail",e);}
+    }
+
+    // 悬浮球大小(dp), 来自设置 pref float_size, 默认 46
+    int prefBallSize(){
+        int d=46;
+        try{ d=getSharedPreferences("pf",0).getInt("float_size",0); }catch(Exception e){}
+        if(d<=0) d=46;
+        if(d<28) d=28;
+        if(d>96) d=96;
+        return d;
+    }
+    // 渐变玻璃球体: 斜向亮→深渐变 + 白描边
+    GradientDrawable makeOrb(){
+        GradientDrawable g=new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setOrientation(GradientDrawable.Orientation.TL_BR);
+        g.setColors(new int[]{0xFFC7D9FF,0xFF5276DB,0xFF162A63});
+        g.setStroke(Math.max(1,dp(1)),0xE6FFFFFF);
+        return g;
+    }
+    // 应用当前 pref 到球体外观(尺寸/渐变/描边/图标字号)
+    void styleBall(){
+        if(ball==null||ballLp==null) return;
+        ballSz=dp(prefBallSize());
+        ballLp.width=ballSz; ballLp.height=ballSz;
+        if(ballTv!=null){
+            ballTv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,ballSz*0.42f);
+            ballTv.setShadowLayer(Math.max(2,ballSz*0.03f),0,Math.max(1,ballSz*0.02f),0xB0000000);
+        }
+        ball.setBackground(makeOrb());
     }
 
     // 新建菜单容器(必须纵向+内边距+圆角背景; 遗漏orientation会横排塌成矮窗口)
@@ -169,7 +212,7 @@ public class FloatBallService extends Service {
 
     // 悬浮球在屏幕可视区内的合法位置范围 {minX,maxX,minY,maxY}
     int[] ballBounds(){
-        int bw=dp(46);
+        int bw=(ballSz>0)?ballSz:dp(46);
         int visH=h-topInsetNow();
         if(visH<dp(100)) visH=h;
         int minY=dp(4), maxY=visH-bw-dp(4);
@@ -186,7 +229,7 @@ public class FloatBallService extends Service {
     }
     // 松手吸附: 只能停靠左右边缘, 中间松手平滑滑向最近边缘并保持边距
     void snapBall(){
-        int bw=dp(46);
+        int bw=(ballSz>0)?ballSz:dp(46);
         int[] bd=ballBounds();
         int cx=ballLp.x+bw/2;
         int margin=dp(12);                       // 与屏幕边缘保持的距离
@@ -319,7 +362,7 @@ public class FloatBallService extends Service {
             int visH=h-topInset;
             if(visH<dp(100)) visH=h;
             if(mh>visH-dp(20)) mh=visH-dp(20);
-            int gx=ballLp.x+dp(46)+dp(8);                 // 默认放球右侧
+            int gx=ballLp.x+((ballSz>0)?ballSz:dp(46))+dp(8);   // 默认放球右侧
             int gy=ballLp.y+ballLp.height/2-mh/2;
             // 右侧放不下放左侧
             if(gx+mw>w-dp(8)) gx=ballLp.x-dp(8)-mw;
