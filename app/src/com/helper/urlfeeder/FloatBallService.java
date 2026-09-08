@@ -37,6 +37,8 @@ public class FloatBallService extends Service {
     private android.animation.ValueAnimator snapAnim=null;
     private int ballSz=0;          // 悬浮球当前像素尺寸
     private TextView ballTv=null;  // 球面图标
+    private long lastBallDown=0;   // 最近一次按住悬浮球的时刻(用于忽略点球瞬间的"外部收起")
+    private long lastHide=0;       // 最近一次收起菜单的时刻(抑制外部收起与点球同一手势的重开)
     // 收起悬浮菜单(避免遮挡其它界面按钮)
     public static void collapseMenu(){ try{ if(inst!=null) inst.hideMenu(); }catch(Exception e){} }
     private Handler hd=new Handler();
@@ -104,12 +106,15 @@ public class FloatBallService extends Service {
         styleBall();   // 渐变外观 + 字号
         ball.setOnTouchListener(new View.OnTouchListener(){
             float dx,dy,downX,downY;
+            boolean downMenuVis;
             public boolean onTouch(View v,android.view.MotionEvent e){
                 switch(e.getAction()){
                     case MotionEvent.ACTION_DOWN:
                         if(snapAnim!=null){ snapAnim.cancel(); snapAnim=null; }
+                        lastBallDown=System.currentTimeMillis();
                         dx=e.getRawX()-ballLp.x; dy=e.getRawY()-ballLp.y;
                         downX=e.getRawX(); downY=e.getRawY();
+                        downMenuVis=menuVisible;   // 按下时记录菜单状态
                         return true;
                     case MotionEvent.ACTION_MOVE:
                         ballLp.x=(int)(e.getRawX()-dx); ballLp.y=(int)(e.getRawY()-dy);
@@ -117,10 +122,23 @@ public class FloatBallService extends Service {
                         try{ wm.updateViewLayout(ball,ballLp); }catch(Exception ex){}
                         return true;
                     case MotionEvent.ACTION_UP:
-                        // 用位移判断: 没真正拖动=点按开关菜单; 拖动过(超过触摸滑动阈值)=吸附到边缘
+                        // 用位移判断: 没真正拖动=点按(按下时开着→关, 关着→开); 拖动过=吸附到边缘
                         float dist=(float)Math.hypot(e.getRawX()-downX,e.getRawY()-downY);
                         int slop=android.view.ViewConfiguration.get(FloatBallService.this).getScaledTouchSlop();
-                        if(dist<slop){ toggleMenu(); Log.i("FloatBall","tap menu dist="+(int)dist); }
+                        if(dist<slop){
+                            if(downMenuVis){ hideMenu(); Log.i("FloatBall","tap close menu dist="+(int)dist); }
+                            else {
+                                if(!menuVisible){
+                                    // 若菜单刚被"外部收起"事件关掉(同一次点球手势先到), 抑制重开
+                                    if(System.currentTimeMillis()-lastHide<350){
+                                        Log.i("FloatBall","suppress reopen after outside-hide");
+                                    }else{
+                                        menuVisible=true; showMenu(true);
+                                        Log.i("FloatBall","tap open menu dist="+(int)dist);
+                                    }
+                                }
+                            }
+                        }
                         else { snapBall(); Log.i("FloatBall","drag snap dist="+(int)dist); }
                         return true;
                 }
@@ -136,7 +154,8 @@ public class FloatBallService extends Service {
         menuLp=new WindowManager.LayoutParams(
             dp(140),WindowManager.LayoutParams.WRAP_CONTENT,
             Build.VERSION.SDK_INT>=26?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                |WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT);
         menuLp.gravity=Gravity.TOP|Gravity.START;
         menuLp.x=ballLp.x+dp(52); menuLp.y=Math.max(dp(40),ballLp.y-dp(42)*6);
@@ -186,6 +205,21 @@ public class FloatBallService extends Service {
         mbg.setStroke(dp(1),0x66FFFFFF);
         m.setBackground(mbg);
         m.setVisibility(View.GONE);
+        // 点菜单以外的区域(其它窗口)自动收起; 点悬浮球本身不算(球自己处理开关)
+        m.setOnTouchListener(new View.OnTouchListener(){
+            public boolean onTouch(View v,android.view.MotionEvent e){
+                if(e.getAction()==android.view.MotionEvent.ACTION_OUTSIDE){
+                    if(System.currentTimeMillis()-lastBallDown<400){
+                        Log.i("FloatBall","outside while ball pressed - ignore");
+                        return true;   // 这次外部事件来自点悬浮球, 交给球处理
+                    }
+                    Log.i("FloatBall","outside touch -> hide");
+                    hideMenu();
+                    return true;
+                }
+                return false;
+            }
+        });
         return m;
     }
 
@@ -378,7 +412,7 @@ public class FloatBallService extends Service {
             try{ wm.updateViewLayout(menu,menuLp); }catch(Exception e){}
         }
     }
-    void hideMenu(){ if(menuVisible){ menuVisible=false; showMenu(false);} }
+    void hideMenu(){ if(menuVisible){ menuVisible=false; lastHide=System.currentTimeMillis(); showMenu(false);} }
 
     void openApp(){
         // 打开万能转发器主界面(回到首页)
