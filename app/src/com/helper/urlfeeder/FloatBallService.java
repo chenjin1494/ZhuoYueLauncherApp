@@ -14,7 +14,9 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 /**
@@ -37,6 +39,10 @@ public class FloatBallService extends Service {
     private TextView ballTv=null;  // 球面图标
     private long lastBallDown=0;   // 最近一次按住悬浮球的时刻(用于忽略点球瞬间的"外部收起")
     private long lastHide=0;       // 最近一次收起菜单的时刻(抑制外部收起与点球同一手势的重开)
+    private boolean subVisible=false;     // 二级"应用"菜单是否显示
+    private LinearLayout sub=null;        // 二级应用菜单窗口
+    private WindowManager.LayoutParams subLp;
+    private LinearLayout subList=null;    // 应用列表容器
     // 收起悬浮菜单(避免遮挡其它界面按钮)
     public static void collapseMenu(){ try{ if(inst!=null) inst.hideMenu(); }catch(Exception e){} }
     private Handler hd=new Handler();
@@ -123,7 +129,8 @@ public class FloatBallService extends Service {
                         float dist=(float)Math.hypot(e.getRawX()-downX,e.getRawY()-downY);
                         int slop=android.view.ViewConfiguration.get(FloatBallService.this).getScaledTouchSlop();
                         if(dist<slop){
-                            if(downMenuVis){ hideMenu(); Log.i("FloatBall","tap close menu dist="+(int)dist); }
+                            if(subVisible){ hideSubNow(); Log.i("FloatBall","tap close apps sub"); }
+                            else if(downMenuVis){ hideMenu(); Log.i("FloatBall","tap close menu dist="+(int)dist); }
                             else {
                                 if(!menuVisible){
                                     // 若菜单刚被"外部收起"事件关掉(同一次点球手势先到), 抑制重开
@@ -246,21 +253,22 @@ public class FloatBallService extends Service {
         for(String id:ORDER_ID){ if(!ord.contains(id)) ord.add(id); }
         final java.util.List<String> labs=new java.util.ArrayList<String>();
         final java.util.List<Runnable> acts=new java.util.ArrayList<Runnable>();
+        // 自定义应用统一收进二级"应用"菜单, 不在主环占位
+        java.util.List<String[]> customs=customList();
         for(String id:ord){
             if("close".equals(id)) continue;      // 关闭改到盘心
-            if(id.startsWith("c")){
-                int n=-1; try{ n=Integer.parseInt(id.substring(1)); }catch(Exception e){}
-                String[] c=customItem(n);
-                if(c!=null){ final String pkg=c[1]; labs.add(c[0]); acts.add(new Runnable(){ public void run(){ hideMenu(); launchApp(pkg); } }); }
-                continue;
-            }
+            if(id.startsWith("c")) continue;      // 自定义项 → 二级菜单
             String lb=labelOf(id);
             if(lb==null) continue;
             labs.add(lb);
             acts.add(actOf(id));
         }
+        if(customs.size()>0){
+            labs.add("📱 应用");
+            acts.add(new Runnable(){ public void run(){ openAppsSub(); } });
+        }
         if(labs.size()>0) renderWheel(labs,acts);
-        Log.i("FloatBall","buildMenu wheel items="+labs.size()+" order="+ord.toString());
+        Log.i("FloatBall","buildMenu wheel items="+labs.size()+" customs="+customs.size()+" order="+ord.toString());
     }
     String labelOf(String id){
         if("back".equals(id)) return "◀ 返回";
@@ -405,7 +413,161 @@ public class FloatBallService extends Service {
             Log.i("FloatBall","wheel hide");
         }
     }
-    void hideMenu(){ if(menuVisible){ menuVisible=false; lastHide=System.currentTimeMillis(); showMenu(false);} }
+    void hideSubNow(){
+        if(subVisible){
+            subVisible=false;
+            if(sub!=null){ try{ sub.setVisibility(View.GONE); }catch(Exception e){} }
+            Log.i("FloatBall","apps sub hide");
+        }
+    }
+    void hideMenu(){
+        if(menuVisible){
+            menuVisible=false; lastHide=System.currentTimeMillis();
+            if(menu!=null){
+                try{ menu.animate().cancel(); }catch(Exception e){}
+                try{ menu.clearAnimation(); }catch(Exception e){}
+                menu.setAlpha(1f); menu.setScaleX(1f); menu.setScaleY(1f);
+                menu.setVisibility(View.GONE);
+            }
+        }
+        hideSubNow();
+        Log.i("FloatBall","wheel hide");
+    }
+
+    // ---------------- 二级"应用"菜单 ----------------
+    // 读全部自定义应用 label|pkg
+    java.util.List<String[]> customList(){
+        java.util.List<String[]> out=new java.util.ArrayList<String[]>();
+        try{
+            String saved=getSharedPreferences("pf",0).getString("float_custom","");
+            if(saved!=null&&saved.length()>0){
+                String[] lines=saved.split("\n");
+                for(String ln:lines){
+                    String[] f=ln.split("\\|",-1);
+                    if(f.length>=2&&f[0].trim().length()>0) out.add(new String[]{f[0].trim(),f[1].trim()});
+                }
+            }
+        }catch(Exception e){}
+        return out;
+    }
+    void createAppsSubWindow(){
+        try{
+            sub=new LinearLayout(this);
+            sub.setOrientation(LinearLayout.VERTICAL);
+            sub.setPadding(dp(8),dp(8),dp(8),dp(8));
+            GradientDrawable bg=new GradientDrawable();
+            bg.setCornerRadius(dp(26));
+            bg.setColor(0xE0000000);
+            bg.setStroke(dp(1),0x66FFFFFF);
+            sub.setBackground(bg);
+            // 顶部: 返回 + 标题
+            LinearLayout head=new LinearLayout(this);
+            head.setOrientation(LinearLayout.HORIZONTAL);
+            head.setGravity(Gravity.CENTER_VERTICAL);
+            TextView title=new TextView(this);
+            title.setText("📱 悬浮球应用"); title.setTextColor(0xFFFFFFFF); title.setTextSize(14);
+            title.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams tlp=new LinearLayout.LayoutParams(0,-2,1f);
+            tlp.rightMargin=dp(6);
+            head.addView(title,tlp);
+            TextView back=new TextView(this);
+            back.setText("‹ 返回"); back.setTextColor(0xFF9EC9FF); back.setTextSize(14);
+            back.setPadding(dp(10),dp(6),dp(6),dp(6));
+            back.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ backToWheel(); } });
+            head.addView(back);
+            sub.addView(head);
+            // 应用列表
+            ScrollView sv=new ScrollView(this);
+            subList=new LinearLayout(this);
+            subList.setOrientation(LinearLayout.VERTICAL);
+            sv.addView(subList);
+            sub.addView(sv,new LinearLayout.LayoutParams(-1,dp(430)));
+            sub.setVisibility(View.GONE);
+            subLp=new WindowManager.LayoutParams(
+                dp(300),dp(520),
+                Build.VERSION.SDK_INT>=26?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                    |WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                PixelFormat.TRANSLUCENT);
+            subLp.gravity=Gravity.CENTER;
+            // 点窗口外收起(点悬浮球瞬间交给球处理)
+            sub.setOnTouchListener(new View.OnTouchListener(){
+                public boolean onTouch(View v,android.view.MotionEvent e){
+                    if(e.getAction()==MotionEvent.ACTION_OUTSIDE){
+                        if(System.currentTimeMillis()-lastBallDown<400){ return true; }
+                        hideSubNow();
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            try{ wm.addView(sub,subLp); Log.i("FloatBall","apps sub window added"); }catch(Exception e){ Log.e("FloatBall","add sub fail",e);}
+        }catch(Exception e){ Log.e("FloatBall","createSub err",e); }
+    }
+    void openAppsSub(){
+        try{
+            if(sub==null) createAppsSubWindow();
+            if(sub==null) return;
+            final java.util.List<String[]> apps=customList();
+            if(apps.size()==0){ toast("还没有添加应用：设置 → 悬浮球菜单排序 → ＋ 添加要打开的应用"); return; }
+            subList.removeAllViews();
+            for(int i=0;i<apps.size();i++){
+                final String[] a=apps.get(i);
+                LinearLayout row=new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                GradientDrawable rbg=new GradientDrawable();
+                rbg.setCornerRadius(dp(16));
+                rbg.setColor(0x26FFFFFF);
+                row.setBackground(rbg);
+                row.setPadding(dp(8),dp(6),dp(8),dp(6));
+                ImageView iv=new ImageView(this);
+                int is=dp(38);
+                iv.setLayoutParams(new LinearLayout.LayoutParams(is,is));
+                android.graphics.drawable.Drawable ic=null;
+                try{ ic=getPackageManager().getApplicationIcon(a[1]); }catch(Exception e){}
+                if(ic!=null) iv.setImageDrawable(ic);
+                else{
+                    iv.setBackground(makeOrb());
+                    iv.setImageDrawable(null);
+                }
+                row.addView(iv);
+                TextView tv=new TextView(this);
+                tv.setText(a[0]); tv.setTextColor(0xFFFFFFFF); tv.setTextSize(14);
+                tv.setGravity(Gravity.LEFT|Gravity.CENTER_VERTICAL);
+                tv.setPadding(dp(10),0,0,0);
+                row.addView(tv,new LinearLayout.LayoutParams(0,-2,1f));
+                row.setOnClickListener(new View.OnClickListener(){
+                    public void onClick(View v){
+                        hideSubNow();
+                        launchApp(a[1]);
+                    }
+                });
+                LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);
+                if(i>0) rp.topMargin=dp(6);
+                subList.addView(row,rp);
+            }
+            // 先藏起主轮盘(像页面下钻), 返回时重建再弹出
+            if(menuVisible&&menu!=null){
+                menuVisible=false;
+                try{ menu.animate().cancel(); }catch(Exception e){}
+                menu.setAlpha(1f); menu.setScaleX(1f); menu.setScaleY(1f);
+                menu.setVisibility(View.GONE);
+            }
+            hideSubNow();
+            subVisible=true;
+            sub.setVisibility(View.VISIBLE);
+            Log.i("FloatBall","apps sub show n="+apps.size());
+        }catch(Exception e){ Log.e("FloatBall","openAppsSub err",e); }
+    }
+    void backToWheel(){
+        hideSubNow();
+        if(menu!=null){
+            buildMenu();
+            menuVisible=true;
+            showMenu(true);
+        }
+    }
 
     void openApp(){
         // 打开万能转发器主界面(回到首页)
@@ -543,12 +705,15 @@ public class FloatBallService extends Service {
         try{ getSharedPreferences("pf",0).edit().putBoolean("float_on",false).commit(); }catch(Exception e){}
         try{ if(ball!=null){ wm.removeView(ball); ball=null; } }catch(Exception e){}
         try{ if(menu!=null){ wm.removeView(menu); menu=null; } }catch(Exception e){}
+        try{ if(sub!=null){ wm.removeView(sub); sub=null; } }catch(Exception e){}
+        subVisible=false;
         stopSelf();
     }
     public void onDestroy(){
         running=false;
         if(snapAnim!=null){ try{ snapAnim.cancel(); }catch(Exception e){} snapAnim=null; }
         if(menu!=null){ try{ menu.animate().cancel(); }catch(Exception e){} }
+        if(sub!=null){ try{ sub.setVisibility(View.GONE); }catch(Exception e){} }
         if(inst==this) inst=null;
         super.onDestroy();
     }
