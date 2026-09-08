@@ -340,6 +340,8 @@ public class MainActivity extends Activity {
         netResult=new TextView(this); netResult.setText("未检测 · 点上方按钮实测连接"); netResult.setTextColor(0xDDFFFFFF); netResult.setTextSize(13);
         netResult.setPadding(dp(4),dp(10),dp(4),0);
         c.addView(netResult);
+        c.addView(gap(10));
+        c.addView(gbtn("🧹 一键清理后台（当前/系统/浏览器不杀）",grad(14,new int[]{0xFF38BDF8,0xFF0369A1}),new View.OnClickListener(){public void onClick(View v){doClearBg();}}));
         return c;
     }
     GradientDrawable shp(int r,int c){ GradientDrawable g=new GradientDrawable(); g.setCornerRadius(dp(r)); g.setColor(c); return g; }
@@ -463,8 +465,8 @@ public class MainActivity extends Activity {
     // ---------- 设备自检页 ----------
     LinearLayout checkBody;
     LinearLayout floatOrderList;
-    String[] FO_ID={"back","home","app","recent","net"};
-    String[] FO_NAME={"◀ 返回","● 主页","🧰 打开主界面","▦ 最近","🔓 开网"};
+    String[] FO_ID={"back","home","app","recent","sweep","net"};
+    String[] FO_NAME={"◀ 返回","● 主页","🧰 打开主界面","▦ 最近","🧹 清理后台","🔓 开网"};
     void openCheck(){ try{ com.helper.urlfeeder.FloatBallService.collapseMenu(); }catch(Exception e){} if(checkPage==null) buildCheck(); try{ checkPage.bringToFront(); }catch(Exception e){} checkPage.setVisibility(View.VISIBLE); refreshCheck(); }
     void closeCheck(){ if(checkPage!=null) checkPage.setVisibility(View.GONE); }
     void buildCheck(){
@@ -886,6 +888,18 @@ public class MainActivity extends Activity {
         }catch(Exception e){ toast("无法打开开发者选项"); }
     }
     void doOpenNet(){ try{ Intent i=new Intent(FW_ACTION); i.setPackage(FW_PKG); bindService(i,conn,Context.BIND_AUTO_CREATE); addLog("发起一键开网…"); }catch(Exception e){ toast("开网失败(bind)"); addLog("一键开网失败: bind"); } }
+    void doClearBg(){
+        addLog("发起一键清理后台…");
+        new Thread(new Runnable(){ public void run(){
+            try{
+                final int n=BgCleaner.clear(MainActivity.this);
+                runOnUiThread(new Runnable(){ public void run(){
+                    toast("清理完成：已对 "+n+" 个应用结束后台进程（前台/系统不受影响）");
+                    addLog("一键清理后台 → 处理 "+n+" 个应用");
+                }});
+            }catch(Exception e){}
+        }}).start();
+    }
     void startGuard(){
         if(Build.VERSION.SDK_INT>=33){
             try{

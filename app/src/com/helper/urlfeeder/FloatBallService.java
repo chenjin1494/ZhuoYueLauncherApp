@@ -148,8 +148,8 @@ public class FloatBallService extends Service {
         return fb;
     }
 
-    // 可排序菜单项 id → 标签/动作
-    String[] ORDER_ID={"back","home","app","recent","net"};
+    // 可排序菜单项 id → 标签/动作 (注意: 不能以 c 开头, c 前缀留给自定义应用 c0..cN)
+    String[] ORDER_ID={"back","home","app","recent","sweep","net"};
     void buildMenu(){
         String saved=null;
         try{ saved=getSharedPreferences("pf",0).getString("float_order",null); }catch(Exception e){}
@@ -202,8 +202,22 @@ public class FloatBallService extends Service {
         else if("home".equals(id)) addMenuItem("● 主页",new Runnable(){public void run(){ goHome(); hideMenu(); }});
         else if("app".equals(id)) addMenuItem("🧰 打开主界面",new Runnable(){public void run(){ openApp(); hideMenu(); }});
         else if("recent".equals(id)) addMenuItem("▦ 最近",new Runnable(){public void run(){ shellKey("187"); hideMenu(); }});
+        else if("sweep".equals(id)) addMenuItem("🧹 清理后台",new Runnable(){public void run(){ hideMenu(); clearBackground(); }});
         else if("net".equals(id)) addMenuItem("🔓 开网",new Runnable(){public void run(){ fireOpenNet(); hideMenu(); }});
         else if("close".equals(id)) addMenuItem("✕ 关闭悬浮球",new Runnable(){public void run(){ hideMenu(); stopBall(); }});
+    }
+    // 清理后台: 只结束系统允许杀的后台/缓存进程, 不依赖 Shizuku
+    void clearBackground(){
+        final Context c=this;
+        new Thread(new Runnable(){ public void run(){
+            try{
+                final int n=BgCleaner.clear(c);
+                hd.post(new Runnable(){ public void run(){
+                    Log.i("FloatBall","clearBackground done n="+n);
+                    toast("已清理后台：处理 "+n+" 个应用（当前/系统不杀）");
+                }});
+            }catch(Exception e){}
+        }}).start();
     }
     void addMenuItem(String t,final Runnable act){
         Button b=new Button(this);
