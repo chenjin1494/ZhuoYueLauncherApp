@@ -39,6 +39,7 @@ public class FloatBallService extends Service {
     private long lastBallDown=0;   // 最近一次按住悬浮球的时刻(用于忽略点球瞬间的"外部收起")
     private long lastHide=0;       // 最近一次收起菜单的时刻(抑制外部收起与点球同一手势的重开)
     private boolean subVisible=false;     // 二级"应用"菜单是否显示
+    private boolean transitioning=false;  // 一二级切换动画进行中(防止重复触发)
     private FrameLayout sub=null;     // 二级"应用"圆盘窗口
     private WindowManager.LayoutParams subLp;
     // 收起悬浮菜单(避免遮挡其它界面按钮)
@@ -414,7 +415,12 @@ public class FloatBallService extends Service {
     void hideSubNow(){
         if(subVisible){
             subVisible=false;
-            if(sub!=null){ try{ sub.setVisibility(View.GONE); }catch(Exception e){} }
+            if(sub!=null){
+                try{ sub.animate().cancel(); }catch(Exception e){}
+                try{ sub.clearAnimation(); }catch(Exception e){}
+                sub.setAlpha(1f); sub.setScaleX(1f); sub.setScaleY(1f);
+                try{ sub.setVisibility(View.GONE); }catch(Exception e){}
+            }
             Log.i("FloatBall","apps sub hide");
         }
     }
@@ -429,6 +435,7 @@ public class FloatBallService extends Service {
             }
         }
         hideSubNow();
+        transitioning=false;   // 取消任何切换动画
         Log.i("FloatBall","wheel hide");
     }
 
@@ -515,18 +522,58 @@ public class FloatBallService extends Service {
             FrameLayout.LayoutParams blp2=new FrameLayout.LayoutParams(cd,cd);
             blp2.leftMargin=cx-cd/2; blp2.topMargin=cy-cd/2;
             sub.addView(back,blp2);
-            // 先藏起主轮盘(页面下钻)
+            Log.i("FloatBall","apps sub disc n="+apps.size());
+            // 下钻动画: 主轮盘缩小淡出 → 二级圆盘放大淡入
+            if(transitioning){ Log.i("FloatBall","transition busy"); return; }
+            transitioning=true;
             if(menuVisible&&menu!=null){
                 menuVisible=false;
                 try{ menu.animate().cancel(); }catch(Exception e){}
-                menu.setAlpha(1f); menu.setScaleX(1f); menu.setScaleY(1f);
-                menu.setVisibility(View.GONE);
-            }
-            hideSubNow();
+                menu.animate().alpha(0f).scaleX(0.75f).scaleY(0.75f).setDuration(150)
+                    .setInterpolator(new android.view.animation.AccelerateInterpolator())
+                    .withEndAction(new Runnable(){ public void run(){
+                        try{ menu.setVisibility(View.GONE); }catch(Exception e){}
+                        menu.setAlpha(1f); menu.setScaleX(1f); menu.setScaleY(1f);
+                        showAppsSubIn();
+                    }}).start();
+            }else showAppsSubIn();
+        }catch(Exception e){ transitioning=false; Log.e("FloatBall","openAppsSub err",e); }
+    }
+    // 二级圆盘放大淡入
+    void showAppsSubIn(){
+        try{
             subVisible=true;
+            sub.setAlpha(0f); sub.setScaleX(0.5f); sub.setScaleY(0.5f);
             sub.setVisibility(View.VISIBLE);
-            Log.i("FloatBall","apps sub disc n="+apps.size());
-        }catch(Exception e){ Log.e("FloatBall","openAppsSub err",e); }
+            sub.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(230)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f))
+                .withEndAction(new Runnable(){ public void run(){ transitioning=false; } }).start();
+            Log.i("FloatBall","apps sub in");
+        }catch(Exception e){ transitioning=false; }
+    }
+    // 返回主轮盘: 二级缩小淡出 → 主轮盘放大淡入
+    void backToWheel(){
+        if(transitioning) return;
+        transitioning=true;
+        if(subVisible&&sub!=null){
+            subVisible=false;
+            try{ sub.animate().cancel(); }catch(Exception e){}
+            sub.animate().alpha(0f).scaleX(0.75f).scaleY(0.75f).setDuration(140)
+                .setInterpolator(new android.view.animation.AccelerateInterpolator())
+                .withEndAction(new Runnable(){ public void run(){
+                    try{ sub.setVisibility(View.GONE); }catch(Exception e){}
+                    sub.setAlpha(1f); sub.setScaleX(1f); sub.setScaleY(1f);
+                    showWheelIn();
+                }}).start();
+        }else showWheelIn();
+    }
+    void showWheelIn(){
+        if(menu!=null){
+            buildMenu();
+            menuVisible=true;
+            showMenu(true);   // showMenu 自带放大淡入
+        }
+        transitioning=false;
     }
     // 应用圆钮: 真实图标 + 名称
     View appTile(final String[] a,int d){
@@ -554,14 +601,6 @@ public class FloatBallService extends Service {
         t.addView(nv);
         t.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ hideSubNow(); launchApp(a[1]); } });
         return t;
-    }
-    void backToWheel(){
-        hideSubNow();
-        if(menu!=null){
-            buildMenu();
-            menuVisible=true;
-            showMenu(true);
-        }
     }
 
     void openApp(){
