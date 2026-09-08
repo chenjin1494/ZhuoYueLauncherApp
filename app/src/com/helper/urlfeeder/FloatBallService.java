@@ -399,6 +399,8 @@ public class FloatBallService extends Service {
     void showMenu(boolean show){
         if(menu==null) return;
         if(show){
+            try{ menu.animate().cancel(); }catch(Exception e){}   // 取消可能残留的收起动画
+            try{ menu.clearAnimation(); }catch(Exception e){}
             menu.setVisibility(View.VISIBLE);
             menu.setAlpha(0f); menu.setScaleX(0.55f); menu.setScaleY(0.55f);
             menu.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(200)
@@ -412,29 +414,37 @@ public class FloatBallService extends Service {
             Log.i("FloatBall","wheel hide");
         }
     }
+    // 收起动画: 缩小+淡出, 结束后隐藏并复位(after 可选回调)
+    void animHide(final View v){ animHide(v,null); }
+    void animHide(final View v,final Runnable after){
+        try{ v.animate().cancel(); }catch(Exception e){}
+        try{ v.clearAnimation(); }catch(Exception e){}
+        v.animate().alpha(0f).scaleX(0.6f).scaleY(0.6f).setDuration(160)
+            .setInterpolator(new android.view.animation.AccelerateInterpolator(1.5f))
+            .withEndAction(new Runnable(){ public void run(){
+                try{ v.setVisibility(View.GONE); }catch(Exception e){}
+                try{ v.setAlpha(1f); v.setScaleX(1f); v.setScaleY(1f); }catch(Exception e){}
+                if(after!=null){ try{ after.run(); }catch(Exception e){} }
+            }}).start();
+    }
     void hideSubNow(){
         if(subVisible){
             subVisible=false;
-            if(sub!=null){
-                try{ sub.animate().cancel(); }catch(Exception e){}
-                try{ sub.clearAnimation(); }catch(Exception e){}
-                sub.setAlpha(1f); sub.setScaleX(1f); sub.setScaleY(1f);
-                try{ sub.setVisibility(View.GONE); }catch(Exception e){}
-            }
+            if(sub!=null) animHide(sub);
             Log.i("FloatBall","apps sub hide");
         }
     }
     void hideMenu(){
+        boolean any=false;
         if(menuVisible){
             menuVisible=false; lastHide=System.currentTimeMillis();
-            if(menu!=null){
-                try{ menu.animate().cancel(); }catch(Exception e){}
-                try{ menu.clearAnimation(); }catch(Exception e){}
-                menu.setAlpha(1f); menu.setScaleX(1f); menu.setScaleY(1f);
-                menu.setVisibility(View.GONE);
-            }
+            if(menu!=null){ animHide(menu); any=true; }
         }
-        hideSubNow();
+        if(subVisible){
+            subVisible=false;
+            if(sub!=null){ animHide(sub); any=true; }
+        }
+        if(!any&&menu!=null&&menu.getVisibility()==View.VISIBLE){ animHide(menu); }  // 兜底
         transitioning=false;   // 取消任何切换动画
         Log.i("FloatBall","wheel hide");
     }
@@ -543,6 +553,8 @@ public class FloatBallService extends Service {
     void showAppsSubIn(){
         try{
             subVisible=true;
+            try{ sub.animate().cancel(); }catch(Exception e){}   // 取消残留收起动画
+            try{ sub.clearAnimation(); }catch(Exception e){}
             sub.setAlpha(0f); sub.setScaleX(0.5f); sub.setScaleY(0.5f);
             sub.setVisibility(View.VISIBLE);
             sub.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(230)
