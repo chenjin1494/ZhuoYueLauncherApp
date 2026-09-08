@@ -240,14 +240,27 @@ public class FloatBallService extends Service {
             int mw=dp(140);
             int mh=menuLp.height;                 // 窗口实际固定高度
             if(mh<=0) mh=menu.getChildCount()*dp(48)+dp(16);   // 兜底估算
-            if(mh>h-dp(20)) mh=h-dp(20);
+            // 状态栏显示时 overlay 坐标空间会被整体下移 topInset,
+            // 可视区高度 = 屏高 - topInset, 否则贴底会把菜单底部推出屏幕
+            int topInset=0;
+            try{
+                if(Build.VERSION.SDK_INT>=30){
+                    android.graphics.Insets sy=wm.getCurrentWindowMetrics().getWindowInsets()
+                        .getInsets(android.view.WindowInsets.Type.systemBars());
+                    topInset=sy.top;
+                }
+            }catch(Exception e){}
+            int visH=h-topInset;
+            if(visH<dp(100)) visH=h;
+            if(mh>visH-dp(20)) mh=visH-dp(20);
             int gx=ballLp.x+dp(46)+dp(8);                 // 默认放球右侧
             int gy=ballLp.y+ballLp.height/2-mh/2;
             // 右侧放不下放左侧
             if(gx+mw>w-dp(8)) gx=ballLp.x-dp(8)-mw;
             if(gy<mh/2+dp(8)) gy=dp(8);                    // 顶部裁剪则贴顶
-            if(gy+mh>h-dp(8)) gy=h-dp(8)-mh;               // 底部裁剪则贴底
+            if(gy+mh>visH-dp(8)) gy=visH-dp(8)-mh;         // 底部裁剪则贴底(可视区内)
             menuLp.x=gx; menuLp.y=gy;
+            Log.i("FloatBall","showMenu mh="+mh+" topInset="+topInset+" gy="+gy+" visH="+visH);
             try{ wm.updateViewLayout(menu,menuLp); }catch(Exception e){}
         }
     }
