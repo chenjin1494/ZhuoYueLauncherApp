@@ -103,20 +103,25 @@ public class FloatBallService extends Service {
         ballLp.x=w-dp(60); ballLp.y=h-dp(160);
         styleBall();   // 渐变外观 + 字号
         ball.setOnTouchListener(new View.OnTouchListener(){
-            float dx,dy; long downT;
+            float dx,dy,downX,downY;
             public boolean onTouch(View v,android.view.MotionEvent e){
                 switch(e.getAction()){
                     case MotionEvent.ACTION_DOWN:
                         if(snapAnim!=null){ snapAnim.cancel(); snapAnim=null; }
-                        dx=e.getRawX()-ballLp.x; dy=e.getRawY()-ballLp.y; downT=System.currentTimeMillis(); return true;
+                        dx=e.getRawX()-ballLp.x; dy=e.getRawY()-ballLp.y;
+                        downX=e.getRawX(); downY=e.getRawY();
+                        return true;
                     case MotionEvent.ACTION_MOVE:
                         ballLp.x=(int)(e.getRawX()-dx); ballLp.y=(int)(e.getRawY()-dy);
                         clampBallOnScreen();
                         try{ wm.updateViewLayout(ball,ballLp); }catch(Exception ex){}
                         return true;
                     case MotionEvent.ACTION_UP:
-                        if(System.currentTimeMillis()-downT<250) toggleMenu();   // 快速点按=开关菜单
-                        else snapBall();                                          // 拖动松手=吸附到左右边缘
+                        // 用位移判断: 没真正拖动=点按开关菜单; 拖动过(超过触摸滑动阈值)=吸附到边缘
+                        float dist=(float)Math.hypot(e.getRawX()-downX,e.getRawY()-downY);
+                        int slop=android.view.ViewConfiguration.get(FloatBallService.this).getScaledTouchSlop();
+                        if(dist<slop){ toggleMenu(); Log.i("FloatBall","tap menu dist="+(int)dist); }
+                        else { snapBall(); Log.i("FloatBall","drag snap dist="+(int)dist); }
                         return true;
                 }
                 return false;
