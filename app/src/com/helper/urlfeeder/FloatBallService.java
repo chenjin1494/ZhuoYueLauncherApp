@@ -16,7 +16,6 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 /**
@@ -40,9 +39,8 @@ public class FloatBallService extends Service {
     private long lastBallDown=0;   // 最近一次按住悬浮球的时刻(用于忽略点球瞬间的"外部收起")
     private long lastHide=0;       // 最近一次收起菜单的时刻(抑制外部收起与点球同一手势的重开)
     private boolean subVisible=false;     // 二级"应用"菜单是否显示
-    private LinearLayout sub=null;        // 二级应用菜单窗口
+    private FrameLayout sub=null;     // 二级"应用"圆盘窗口
     private WindowManager.LayoutParams subLp;
-    private LinearLayout subList=null;    // 应用列表容器
     // 收起悬浮菜单(避免遮挡其它界面按钮)
     public static void collapseMenu(){ try{ if(inst!=null) inst.hideMenu(); }catch(Exception e){} }
     private Handler hd=new Handler();
@@ -452,56 +450,40 @@ public class FloatBallService extends Service {
     }
     void createAppsSubWindow(){
         try{
-            sub=new LinearLayout(this);
-            sub.setOrientation(LinearLayout.VERTICAL);
-            sub.setPadding(dp(8),dp(8),dp(8),dp(8));
+            FrameLayout m=new FrameLayout(this);
             GradientDrawable bg=new GradientDrawable();
-            bg.setCornerRadius(dp(26));
-            bg.setColor(0xE0000000);
-            bg.setStroke(dp(1),0x66FFFFFF);
-            sub.setBackground(bg);
-            // 顶部: 返回 + 标题
-            LinearLayout head=new LinearLayout(this);
-            head.setOrientation(LinearLayout.HORIZONTAL);
-            head.setGravity(Gravity.CENTER_VERTICAL);
-            TextView title=new TextView(this);
-            title.setText("📱 悬浮球应用"); title.setTextColor(0xFFFFFFFF); title.setTextSize(14);
-            title.setGravity(Gravity.CENTER);
-            LinearLayout.LayoutParams tlp=new LinearLayout.LayoutParams(0,-2,1f);
-            tlp.rightMargin=dp(6);
-            head.addView(title,tlp);
-            TextView back=new TextView(this);
-            back.setText("‹ 返回"); back.setTextColor(0xFF9EC9FF); back.setTextSize(14);
-            back.setPadding(dp(10),dp(6),dp(6),dp(6));
-            back.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ backToWheel(); } });
-            head.addView(back);
-            sub.addView(head);
-            // 应用列表
-            ScrollView sv=new ScrollView(this);
-            subList=new LinearLayout(this);
-            subList.setOrientation(LinearLayout.VERTICAL);
-            sv.addView(subList);
-            sub.addView(sv,new LinearLayout.LayoutParams(-1,dp(430)));
-            sub.setVisibility(View.GONE);
-            subLp=new WindowManager.LayoutParams(
-                dp(300),dp(520),
-                Build.VERSION.SDK_INT>=26?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                    |WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-                PixelFormat.TRANSLUCENT);
-            subLp.gravity=Gravity.CENTER;
-            // 点窗口外收起(点悬浮球瞬间交给球处理)
-            sub.setOnTouchListener(new View.OnTouchListener(){
+            bg.setShape(GradientDrawable.OVAL);
+            bg.setColor(0xA6000000);              // 与主轮盘同款: 黑色半透明
+            bg.setStroke(Math.max(1,dp(1)),0x40FFFFFF);
+            m.setBackground(bg);
+            m.setVisibility(View.GONE);
+            // 点盘外/四角收起(点悬浮球瞬间交给球处理)
+            m.setOnTouchListener(new View.OnTouchListener(){
                 public boolean onTouch(View v,android.view.MotionEvent e){
-                    if(e.getAction()==MotionEvent.ACTION_OUTSIDE){
+                    int act=e.getAction();
+                    if(act==MotionEvent.ACTION_OUTSIDE){
                         if(System.currentTimeMillis()-lastBallDown<400){ return true; }
                         hideSubNow();
+                        return true;
+                    }
+                    if(act==MotionEvent.ACTION_DOWN){
+                        int dq=discSize(); float cx=dq/2f, cy=cx;
+                        float dx=e.getX()-cx, dy=e.getY()-cy;
+                        if(dx*dx+dy*dy>(cx-dp(2))*(cx-dp(2))){ hideSubNow(); return true; }
                         return true;
                     }
                     return false;
                 }
             });
-            try{ wm.addView(sub,subLp); Log.i("FloatBall","apps sub window added"); }catch(Exception e){ Log.e("FloatBall","add sub fail",e);}
+            sub=m;
+            subLp=new WindowManager.LayoutParams(
+                discSize(),discSize(),
+                Build.VERSION.SDK_INT>=26?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                    |WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                PixelFormat.TRANSLUCENT);
+            subLp.gravity=Gravity.CENTER;
+            try{ wm.addView(sub,subLp); Log.i("FloatBall","apps sub disc added"); }catch(Exception e){ Log.e("FloatBall","add sub fail",e);}
         }catch(Exception e){ Log.e("FloatBall","createSub err",e); }
     }
     void openAppsSub(){
@@ -510,44 +492,30 @@ public class FloatBallService extends Service {
             if(sub==null) return;
             final java.util.List<String[]> apps=customList();
             if(apps.size()==0){ toast("还没有添加应用：设置 → 悬浮球菜单排序 → ＋ 添加要打开的应用"); return; }
-            subList.removeAllViews();
-            for(int i=0;i<apps.size();i++){
+            sub.removeAllViews();
+            int n=apps.size();
+            int dq=discSize(); int cx=dq/2, cy=dq/2;
+            int itemD=(n<=10)?dp(60):dp(50);
+            int R=dp(102);
+            if(R+itemD/2>dq/2-dp(4)) R=dq/2-itemD/2-dp(4);
+            // 应用真实图标围成一圈
+            for(int i=0;i<n;i++){
                 final String[] a=apps.get(i);
-                LinearLayout row=new LinearLayout(this);
-                row.setOrientation(LinearLayout.HORIZONTAL);
-                row.setGravity(Gravity.CENTER_VERTICAL);
-                GradientDrawable rbg=new GradientDrawable();
-                rbg.setCornerRadius(dp(16));
-                rbg.setColor(0x26FFFFFF);
-                row.setBackground(rbg);
-                row.setPadding(dp(8),dp(6),dp(8),dp(6));
-                ImageView iv=new ImageView(this);
-                int is=dp(38);
-                iv.setLayoutParams(new LinearLayout.LayoutParams(is,is));
-                android.graphics.drawable.Drawable ic=null;
-                try{ ic=getPackageManager().getApplicationIcon(a[1]); }catch(Exception e){}
-                if(ic!=null) iv.setImageDrawable(ic);
-                else{
-                    iv.setBackground(makeOrb());
-                    iv.setImageDrawable(null);
-                }
-                row.addView(iv);
-                TextView tv=new TextView(this);
-                tv.setText(a[0]); tv.setTextColor(0xFFFFFFFF); tv.setTextSize(14);
-                tv.setGravity(Gravity.LEFT|Gravity.CENTER_VERTICAL);
-                tv.setPadding(dp(10),0,0,0);
-                row.addView(tv,new LinearLayout.LayoutParams(0,-2,1f));
-                row.setOnClickListener(new View.OnClickListener(){
-                    public void onClick(View v){
-                        hideSubNow();
-                        launchApp(a[1]);
-                    }
-                });
-                LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);
-                if(i>0) rp.topMargin=dp(6);
-                subList.addView(row,rp);
+                double ang=Math.toRadians(-90.0+360.0*i/n);
+                int px=cx+(int)Math.round(R*Math.cos(ang))-itemD/2;
+                int py=cy+(int)Math.round(R*Math.sin(ang))-itemD/2;
+                View t=appTile(a,itemD);
+                FrameLayout.LayoutParams flp=new FrameLayout.LayoutParams(itemD,itemD);
+                flp.leftMargin=px; flp.topMargin=py;
+                sub.addView(t,flp);
             }
-            // 先藏起主轮盘(像页面下钻), 返回时重建再弹出
+            // 盘心: ‹ 返回主轮盘
+            int cd=dp(68);
+            View back=wheelTile("‹ 返回",new Runnable(){ public void run(){ backToWheel(); } },cd,true);
+            FrameLayout.LayoutParams blp2=new FrameLayout.LayoutParams(cd,cd);
+            blp2.leftMargin=cx-cd/2; blp2.topMargin=cy-cd/2;
+            sub.addView(back,blp2);
+            // 先藏起主轮盘(页面下钻)
             if(menuVisible&&menu!=null){
                 menuVisible=false;
                 try{ menu.animate().cancel(); }catch(Exception e){}
@@ -557,8 +525,35 @@ public class FloatBallService extends Service {
             hideSubNow();
             subVisible=true;
             sub.setVisibility(View.VISIBLE);
-            Log.i("FloatBall","apps sub show n="+apps.size());
+            Log.i("FloatBall","apps sub disc n="+apps.size());
         }catch(Exception e){ Log.e("FloatBall","openAppsSub err",e); }
+    }
+    // 应用圆钮: 真实图标 + 名称
+    View appTile(final String[] a,int d){
+        LinearLayout t=new LinearLayout(this);
+        t.setOrientation(LinearLayout.VERTICAL);
+        t.setGravity(Gravity.CENTER);
+        GradientDrawable bg=new GradientDrawable();
+        bg.setShape(GradientDrawable.OVAL);
+        bg.setColor(0x59FFFFFF);
+        bg.setStroke(dp(1),0xAAFFFFFF);
+        t.setBackground(bg);
+        ImageView iv=new ImageView(this);
+        int is=(int)(d*0.52f);
+        android.graphics.drawable.Drawable ic=null;
+        try{ ic=getPackageManager().getApplicationIcon(a[1]); }catch(Exception e){}
+        if(ic!=null) iv.setImageDrawable(ic);
+        else{ iv.setBackground(makeOrb()); }
+        t.addView(iv,new LinearLayout.LayoutParams(is,is));
+        TextView nv=new TextView(this);
+        nv.setText(a[0]); nv.setTextColor(0xFF1A1A1A);
+        nv.setTextSize(8.5f); nv.setGravity(Gravity.CENTER);
+        nv.setMaxLines(1); nv.setMaxWidth(d-dp(6));
+        nv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        nv.setIncludeFontPadding(false);
+        t.addView(nv);
+        t.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ hideSubNow(); launchApp(a[1]); } });
+        return t;
     }
     void backToWheel(){
         hideSubNow();
