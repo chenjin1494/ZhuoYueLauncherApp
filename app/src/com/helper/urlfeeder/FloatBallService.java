@@ -33,6 +33,8 @@ public class FloatBallService extends Service {
     private int w,h; // 屏幕
     public static volatile boolean running=false;
     private static FloatBallService inst;
+    // 吸附动画(拖动松手平滑滑向左右边缘)
+    private android.animation.ValueAnimator snapAnim=null;
     // 收起悬浮菜单(避免遮挡其它界面按钮)
     public static void collapseMenu(){ try{ if(inst!=null) inst.hideMenu(); }catch(Exception e){} }
     private Handler hd=new Handler();
@@ -91,13 +93,17 @@ public class FloatBallService extends Service {
             float dx,dy; long downT;
             public boolean onTouch(View v,android.view.MotionEvent e){
                 switch(e.getAction()){
-                    case MotionEvent.ACTION_DOWN: dx=e.getRawX()-ballLp.x; dy=e.getRawY()-ballLp.y; downT=System.currentTimeMillis(); return true;
+                    case MotionEvent.ACTION_DOWN:
+                        if(snapAnim!=null){ snapAnim.cancel(); snapAnim=null; }
+                        dx=e.getRawX()-ballLp.x; dy=e.getRawY()-ballLp.y; downT=System.currentTimeMillis(); return true;
                     case MotionEvent.ACTION_MOVE:
                         ballLp.x=(int)(e.getRawX()-dx); ballLp.y=(int)(e.getRawY()-dy);
+                        clampBallOnScreen();
                         try{ wm.updateViewLayout(ball,ballLp); }catch(Exception ex){}
                         return true;
                     case MotionEvent.ACTION_UP:
-                        if(System.currentTimeMillis()-downT<250) toggleMenu();
+                        if(System.currentTimeMillis()-downT<250) toggleMenu();   // 快速点按=开关菜单
+                        else snapBall();                                          // 拖动松手=吸附到左右边缘
                         return true;
                 }
                 return false;
@@ -146,6 +152,73 @@ public class FloatBallService extends Service {
             if(mh>dp(8)) return mh;
         }catch(Exception e){}
         return fb;
+    }
+
+    // 当前状态栏高度(状态栏显示时 overlay 坐标空间会整体下移这么多)
+    int topInsetNow(){
+        int t=0;
+        try{
+            if(Build.VERSION.SDK_INT>=30){
+                android.graphics.Insets sy=wm.getCurrentWindowMetrics().getWindowInsets()
+                    .getInsets(android.view.WindowInsets.Type.systemBars());
+                t=sy.top;
+            }
+        }catch(Exception e){}
+        return t;
+    }
+
+    // 悬浮球在屏幕可视区内的合法位置范围 {minX,maxX,minY,maxY}
+    int[] ballBounds(){
+        int bw=dp(46);
+        int visH=h-topInsetNow();
+        if(visH<dp(100)) visH=h;
+        int minY=dp(4), maxY=visH-bw-dp(4);
+        if(maxY<minY) maxY=minY;
+        return new int[]{0,w-bw,minY,maxY};
+    }
+    // 拖动过程中把球限制在可视区内(不会拖丢)
+    void clampBallOnScreen(){
+        int[] bd=ballBounds();
+        if(ballLp.x<bd[0]) ballLp.x=bd[0];
+        if(ballLp.x>bd[1]) ballLp.x=bd[1];
+        if(ballLp.y<bd[2]) ballLp.y=bd[2];
+        if(ballLp.y>bd[3]) ballLp.y=bd[3];
+    }
+    // 松手吸附: 只能停靠左右边缘, 中间松手平滑滑向最近边缘并保持边距
+    void snapBall(){
+        int bw=dp(46);
+        int[] bd=ballBounds();
+        int cx=ballLp.x+bw/2;
+        int margin=dp(12);                       // 与屏幕边缘保持的距离
+        int targetX;
+        if(cx<w/2) targetX=margin;               // 球心偏左 → 贴左
+        else targetX=w-bw-margin;                // 球心偏右 → 贴右
+        if(targetX<bd[0]) targetX=bd[0];
+        if(targetX>bd[1]) targetX=bd[1];
+        int targetY=ballLp.y;
+        if(targetY<bd[2]) targetY=bd[2];
+        if(targetY>bd[3]) targetY=bd[3];
+        if(targetX==ballLp.x&&targetY==ballLp.y) return;
+        final int fx=ballLp.x,fy=ballLp.y,tx=targetX,ty=targetY;
+        if(snapAnim!=null) snapAnim.cancel();
+        snapAnim=android.animation.ValueAnimator.ofInt(fx,tx);
+        snapAnim.setDuration(320);
+        snapAnim.setInterpolator(new android.view.animation.DecelerateInterpolator(2.2f));
+        snapAnim.addUpdateListener(new android.animation.ValueAnimator.AnimatorUpdateListener(){
+            public void onAnimationUpdate(android.animation.ValueAnimator a){
+                int v=((Integer)a.getAnimatedValue()).intValue();
+                float f=a.getAnimatedFraction();
+                ballLp.x=v;
+                ballLp.y=fy+Math.round((ty-fy)*f);
+                try{ wm.updateViewLayout(ball,ballLp); }catch(Exception e){}
+            }
+        });
+        snapAnim.addListener(new android.animation.AnimatorListenerAdapter(){
+            public void onAnimationEnd(android.animation.Animator a){ snapAnim=null; Log.i("FloatBall","snap done x="+ballLp.x+" y="+ballLp.y); }
+            public void onAnimationCancel(android.animation.Animator a){ snapAnim=null; }
+        });
+        snapAnim.start();
+        Log.i("FloatBall","snap x "+fx+"->"+tx+" y "+fy+"->"+ty);
     }
 
     // 可排序菜单项 id → 标签/动作 (注意: 不能以 c 开头, c 前缀留给自定义应用 c0..cN)
@@ -242,14 +315,7 @@ public class FloatBallService extends Service {
             if(mh<=0) mh=menu.getChildCount()*dp(48)+dp(16);   // 兜底估算
             // 状态栏显示时 overlay 坐标空间会被整体下移 topInset,
             // 可视区高度 = 屏高 - topInset, 否则贴底会把菜单底部推出屏幕
-            int topInset=0;
-            try{
-                if(Build.VERSION.SDK_INT>=30){
-                    android.graphics.Insets sy=wm.getCurrentWindowMetrics().getWindowInsets()
-                        .getInsets(android.view.WindowInsets.Type.systemBars());
-                    topInset=sy.top;
-                }
-            }catch(Exception e){}
+            int topInset=topInsetNow();
             int visH=h-topInset;
             if(visH<dp(100)) visH=h;
             if(mh>visH-dp(20)) mh=visH-dp(20);
@@ -338,6 +404,7 @@ public class FloatBallService extends Service {
     }
     public void onDestroy(){
         running=false;
+        if(snapAnim!=null){ try{ snapAnim.cancel(); }catch(Exception e){} snapAnim=null; }
         if(inst==this) inst=null;
         super.onDestroy();
     }
