@@ -346,6 +346,7 @@ public class FloatBallService extends Service {
         if(n==0) return;
         int dq=discSize(); int cx=dq/2, cy=dq/2;
         int[] ring=ringFor(n); int itemD=ring[0], R=ring[1];
+        decorateDisc(menu,n,itemD,R);   // 盘心光环+扇区分隔线(美化分层)
         for(int i=0;i<n;i++){
             double a=Math.toRadians(-90.0+360.0*i/n);   // 从顶部开始顺时针
             int px=cx+(int)Math.round(R*Math.cos(a))-itemD/2;
@@ -361,6 +362,59 @@ public class FloatBallService extends Service {
         clp.leftMargin=cx-cd/2; clp.topMargin=cy-cd/2;
         menu.addView(cc,clp);
         Log.i("FloatBall","wheel rendered n="+n);
+    }
+    // 圆盘分层装饰: 盘心光环 + 项内侧圆环 + 扇区分隔线 → 视觉上"中间圆 + 周围区域"
+    void decorateDisc(final FrameLayout host,int n,int itemD,int R){
+        try{
+            int dq=discSize(); int cx=dq/2;
+            int innerEdge=R-itemD/2;                 // 项内缘
+            // 1) "中间的圆": 从盘心铺到项内缘的柔和浅圈 + 外描边
+            int hubR=Math.max(dp(10),innerEdge-dp(2));
+            View hv=circleView(hubR*2,0x12FFFFFF,0x45FFFFFF);
+            FrameLayout.LayoutParams hlp=new FrameLayout.LayoutParams(hubR*2,hubR*2);
+            hlp.leftMargin=cx-hubR; hlp.topMargin=cx-hubR;
+            host.addView(hv,hlp);
+            // 2) 周围区域外沿细环
+            int outerEdge=dq/2-dp(4);
+            View rim=circleView(outerEdge*2,0x00000000,0x22FFFFFF);
+            FrameLayout.LayoutParams rlp=new FrameLayout.LayoutParams(outerEdge*2,outerEdge*2);
+            rlp.leftMargin=cx-outerEdge; rlp.topMargin=cx-outerEdge;
+            host.addView(rim,rlp);
+            // 3) 扇区分隔线: 从项内缘到盘外缘, 每个扇区边界一条淡线
+            int outer=outerEdge;
+            if(n<=0) n=6;
+            for(int i=0;i<n;i++){
+                double deg=-90.0+360.0*(i+0.5)/n;
+                drawSpoke(host,deg,innerEdge+dp(1),outer,cx);
+            }
+        }catch(Exception e){}
+    }
+    // 纯色/描边圆(装饰用)
+    View circleView(int d,int fill,int stroke){
+        GradientDrawable g=new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        if(fill!=0) g.setColor(fill);
+        g.setStroke(Math.max(1,dp(1)),stroke);
+        View v=new View(this);
+        v.setBackground(g);
+        return v;
+    }
+    // 从 fromR 到 toR、方向为 deg 的细线(以盘心为轴)
+    void drawSpoke(FrameLayout host,double deg,int fromR,int toR,int cx){
+        try{
+            double a=Math.toRadians(deg);
+            int len=toR-fromR;
+            int rmid=(fromR+toR)/2;
+            int px=cx+(int)Math.round(rmid*Math.cos(a));
+            int py=cx+(int)Math.round(rmid*Math.sin(a));
+            View ln=new View(this);
+            ln.setBackgroundColor(0x26FFFFFF);
+            int w=dp(1);
+            FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(w,len);
+            lp.leftMargin=px-w/2; lp.topMargin=py-len/2;
+            ln.setRotation((float)(deg-90.0));   // 自身中心为盘心 → 绕盘心旋转对齐半径
+            host.addView(ln,lp);
+        }catch(Exception e){}
     }
     // 单个圆形按钮(图标+名称)
     View wheelTile(String label,final Runnable act,int d,boolean center){
@@ -574,6 +628,7 @@ public class FloatBallService extends Service {
             int n=apps.size();
             int dq=discSize(); int cx=dq/2, cy=dq/2;
             int[] ring=ringFor(n); int itemD=ring[0], R=ring[1];
+            decorateDisc(sub,n,itemD,R);   // 与主轮盘同款分层美化
             // 应用真实图标围成一圈
             for(int i=0;i<n;i++){
                 final String[] a=apps.get(i);
