@@ -42,6 +42,8 @@ public class FloatBallService extends Service {
     private boolean transitioning=false;  // 一二级切换动画进行中(防止重复触发)
     private FrameLayout sub=null;     // 二级"应用"圆盘窗口
     private WindowManager.LayoutParams subLp;
+    private LinearLayout scrim=null;      // 透明拦截屏(盘外点击只收起, 不误触下层)
+    private WindowManager.LayoutParams scrimLp;
     // 收起悬浮菜单(避免遮挡其它界面按钮)
     public static void collapseMenu(){ try{ if(inst!=null) inst.hideMenu(); }catch(Exception e){} }
     private Handler hd=new Handler();
@@ -105,6 +107,20 @@ public class FloatBallService extends Service {
             PixelFormat.TRANSLUCENT);
         ballLp.gravity=Gravity.TOP|Gravity.START;
         ballLp.x=w-dp(60); ballLp.y=h-dp(160);
+        // 记忆停靠位置: 优先还原到上次的屏幕边缘+高度
+        try{
+            android.content.SharedPreferences pp=getSharedPreferences("pf",0);
+            if(pp.contains("float_edge")){
+                int edge=pp.getInt("float_edge",1);
+                int margin=dp(12);
+                int[] bd=ballBounds();
+                ballLp.x=(edge==0)?Math.max(bd[0],margin):Math.max(bd[0],w-ballSz-margin);
+                int sy=pp.getInt("float_y",ballLp.y);
+                if(sy<bd[2]) sy=bd[2]; if(sy>bd[3]) sy=bd[3];
+                ballLp.y=sy;
+                Log.i("FloatBall","restore pos edge="+edge+" x="+ballLp.x+" y="+ballLp.y);
+            }
+        }catch(Exception e){}
         styleBall();   // 渐变外观 + 字号
         ball.setOnTouchListener(new View.OnTouchListener(){
             float dx,dy,downX,downY;
@@ -132,8 +148,9 @@ public class FloatBallService extends Service {
                             else if(downMenuVis){ hideMenu(); Log.i("FloatBall","tap close menu dist="+(int)dist); }
                             else {
                                 if(!menuVisible){
-                                    // 若菜单刚被"外部收起"事件关掉(同一次点球手势先到), 抑制重开
-                                    if(System.currentTimeMillis()-lastHide<350){
+                                    // 外部收起事件先于球的DOWN到达, 会先把菜单关掉;
+                                    // 只在极短窗口(同一次手势)内抑制重开, 以免快速双击被吞
+                                    if(System.currentTimeMillis()-lastHide<120){
                                         Log.i("FloatBall","suppress reopen after outside-hide");
                                     }else{
                                         menuVisible=true; showMenu(true);
@@ -150,6 +167,29 @@ public class FloatBallService extends Service {
         });
         Log.i("FloatBall","add ball x="+ballLp.x+" y="+ballLp.y+" w="+w+" h="+h);
         try{ wm.addView(ball,ballLp); Log.i("FloatBall","ball added OK"); }catch(Exception e){ Log.e("FloatBall","add ball fail",e);}
+
+        // 透明拦截屏: 放在球之上、盘之下 → 盘外点击只收起菜单, 不会误触到下层应用按钮
+        try{
+            scrim=new LinearLayout(this);
+            scrim.setBackgroundColor(0x00000000);
+            scrimLp=new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.MATCH_PARENT,
+                Build.VERSION.SDK_INT>=26?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT);
+            scrimLp.gravity=Gravity.TOP|Gravity.START;
+            scrimLp.x=0; scrimLp.y=0;
+            scrim.setVisibility(View.GONE);
+            scrim.setOnTouchListener(new View.OnTouchListener(){
+                public boolean onTouch(View v,android.view.MotionEvent e){
+                    Log.i("FloatBall","scrim tap -> hide");
+                    hideMenu();
+                    return true;
+                }
+            });
+            wm.addView(scrim,scrimLp);
+            Log.i("FloatBall","scrim added");
+        }catch(Exception e){ Log.e("FloatBall","add scrim fail",e);}
 
         // 中央圆形轮盘(初始隐藏, 屏幕居中)
         int dq=discSize();
@@ -287,6 +327,17 @@ public class FloatBallService extends Service {
         if("net".equals(id)) return new Runnable(){public void run(){ fireOpenNet(); hideMenu(); }};
         return new Runnable(){public void run(){ hideMenu(); }};
     }
+    // 按项数自适应: 项越多按钮越小、半径略大(保持单圈不重叠)
+    int[] ringFor(int n){
+        int d=60,r=102;   // dp
+        if(n>8){ d=54; r=106; }
+        if(n>13){ d=46; r=112; }
+        if(n>18){ d=38; r=116; }
+        int dd=dp(d), rr=dp(r);
+        int dq=discSize();
+        if(rr+dd/2>dq/2-dp(6)) rr=dq/2-dd/2-dp(6);
+        return new int[]{dd,rr};
+    }
     // 把各功能项摆到一圈上, 盘心放 ✕ 收起
     void renderWheel(final java.util.List<String> labs, final java.util.List<Runnable> acts){
         if(menu==null) return;
@@ -294,9 +345,7 @@ public class FloatBallService extends Service {
         int n=labs.size();
         if(n==0) return;
         int dq=discSize(); int cx=dq/2, cy=dq/2;
-        int itemD=(n<=10)?dp(60):dp(50);
-        int R=dp(102);
-        if(R+itemD/2>dq/2-dp(4)) R=dq/2-itemD/2-dp(4);
+        int[] ring=ringFor(n); int itemD=ring[0], R=ring[1];
         for(int i=0;i<n;i++){
             double a=Math.toRadians(-90.0+360.0*i/n);   // 从顶部开始顺时针
             int px=cx+(int)Math.round(R*Math.cos(a))-itemD/2;
@@ -405,6 +454,7 @@ public class FloatBallService extends Service {
             menu.setAlpha(0f); menu.setScaleX(0.55f); menu.setScaleY(0.55f);
             menu.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(200)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+            scrimShow();   // 盘外点击由拦截屏接收 → 只收起不误触
             Log.i("FloatBall","wheel show");
         }else{
             try{ menu.animate().cancel(); }catch(Exception e){}
@@ -427,10 +477,20 @@ public class FloatBallService extends Service {
                 if(after!=null){ try{ after.run(); }catch(Exception e){} }
             }}).start();
     }
+    // 拦截屏显隐
+    void scrimShow(){ try{ if(scrim!=null) scrim.setVisibility(View.VISIBLE); }catch(Exception e){} }
+    void scrimHideSoon(){
+        try{
+            hd.postDelayed(new Runnable(){ public void run(){
+                try{ if(scrim!=null&&!menuVisible&&!subVisible) scrim.setVisibility(View.GONE); }catch(Exception e){}
+            }},230);
+        }catch(Exception e){}
+    }
     void hideSubNow(){
         if(subVisible){
             subVisible=false;
             if(sub!=null) animHide(sub);
+            scrimHideSoon();
             Log.i("FloatBall","apps sub hide");
         }
     }
@@ -446,6 +506,7 @@ public class FloatBallService extends Service {
         }
         if(!any&&menu!=null&&menu.getVisibility()==View.VISIBLE){ animHide(menu); }  // 兜底
         transitioning=false;   // 取消任何切换动画
+        scrimHideSoon();
         Log.i("FloatBall","wheel hide");
     }
 
@@ -512,16 +573,14 @@ public class FloatBallService extends Service {
             sub.removeAllViews();
             int n=apps.size();
             int dq=discSize(); int cx=dq/2, cy=dq/2;
-            int itemD=(n<=10)?dp(60):dp(50);
-            int R=dp(102);
-            if(R+itemD/2>dq/2-dp(4)) R=dq/2-itemD/2-dp(4);
+            int[] ring=ringFor(n); int itemD=ring[0], R=ring[1];
             // 应用真实图标围成一圈
             for(int i=0;i<n;i++){
                 final String[] a=apps.get(i);
                 double ang=Math.toRadians(-90.0+360.0*i/n);
                 int px=cx+(int)Math.round(R*Math.cos(ang))-itemD/2;
                 int py=cy+(int)Math.round(R*Math.sin(ang))-itemD/2;
-                View t=appTile(a,itemD);
+                View t=appTile(a,i,itemD);
                 FrameLayout.LayoutParams flp=new FrameLayout.LayoutParams(itemD,itemD);
                 flp.leftMargin=px; flp.topMargin=py;
                 sub.addView(t,flp);
@@ -560,6 +619,7 @@ public class FloatBallService extends Service {
             sub.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(230)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f))
                 .withEndAction(new Runnable(){ public void run(){ transitioning=false; } }).start();
+            scrimShow();
             Log.i("FloatBall","apps sub in");
         }catch(Exception e){ transitioning=false; }
     }
@@ -587,8 +647,8 @@ public class FloatBallService extends Service {
         }
         transitioning=false;
     }
-    // 应用圆钮: 真实图标 + 名称
-    View appTile(final String[] a,int d){
+    // 应用圆钮: 真实图标 + 名称 (点击打开, 长按管理)
+    View appTile(final String[] a,final int idx,int d){
         LinearLayout t=new LinearLayout(this);
         t.setOrientation(LinearLayout.VERTICAL);
         t.setGravity(Gravity.CENTER);
@@ -612,6 +672,20 @@ public class FloatBallService extends Service {
         nv.setIncludeFontPadding(false);
         t.addView(nv);
         t.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ hideSubNow(); launchApp(a[1]); } });
+        t.setOnLongClickListener(new View.OnLongClickListener(){
+            public boolean onLongClick(View v){
+                hideMenu();   // 收起所有圆盘
+                try{
+                    Intent mg=new Intent(FloatBallService.this,MainActivity.class);
+                    mg.setAction("com.helper.urlfeeder.action.MANAGE_FLOAT_APP");
+                    mg.putExtra("idx",idx);
+                    mg.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                    startActivity(mg);
+                    Log.i("FloatBall","manage app idx="+idx);
+                }catch(Exception e){ Log.e("FloatBall","manage fail",e); }
+                return true;
+            }
+        });
         return t;
     }
 
@@ -723,6 +797,13 @@ public class FloatBallService extends Service {
         int targetY=ballLp.y;
         if(targetY<bd[2]) targetY=bd[2];
         if(targetY>bd[3]) targetY=bd[3];
+        // 记忆停靠: 贴边(0左/1右) + 高度
+        try{
+            getSharedPreferences("pf",0).edit()
+                .putInt("float_edge",(cx<w/2)?0:1)
+                .putInt("float_y",targetY)
+                .commit();
+        }catch(Exception e){}
         if(targetX==ballLp.x&&targetY==ballLp.y) return;
         final int fx=ballLp.x,fy=ballLp.y,tx=targetX,ty=targetY;
         if(snapAnim!=null) snapAnim.cancel();
@@ -752,6 +833,7 @@ public class FloatBallService extends Service {
         try{ if(ball!=null){ wm.removeView(ball); ball=null; } }catch(Exception e){}
         try{ if(menu!=null){ wm.removeView(menu); menu=null; } }catch(Exception e){}
         try{ if(sub!=null){ wm.removeView(sub); sub=null; } }catch(Exception e){}
+        try{ if(scrim!=null){ wm.removeView(scrim); scrim=null; } }catch(Exception e){}
         subVisible=false;
         stopSelf();
     }
@@ -760,6 +842,7 @@ public class FloatBallService extends Service {
         if(snapAnim!=null){ try{ snapAnim.cancel(); }catch(Exception e){} snapAnim=null; }
         if(menu!=null){ try{ menu.animate().cancel(); }catch(Exception e){} }
         if(sub!=null){ try{ sub.setVisibility(View.GONE); }catch(Exception e){} }
+        if(scrim!=null){ try{ scrim.setVisibility(View.GONE); }catch(Exception e){} }
         if(inst==this) inst=null;
         super.onDestroy();
     }
