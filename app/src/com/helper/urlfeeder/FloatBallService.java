@@ -839,10 +839,18 @@ public class FloatBallService extends Service {
     }
     public void onDestroy(){
         running=false;
-        if(snapAnim!=null){ try{ snapAnim.cancel(); }catch(Exception e){} snapAnim=null; }
-        if(menu!=null){ try{ menu.animate().cancel(); }catch(Exception e){} }
-        if(sub!=null){ try{ sub.setVisibility(View.GONE); }catch(Exception e){} }
-        if(scrim!=null){ try{ scrim.setVisibility(View.GONE); }catch(Exception e){} }
+        // 关键: 停止服务时把所有悬浮窗从 WindowManager 摘掉,
+        // 否则(如设置里"停止悬浮球"走 stopService)窗口会残留, 再启动会叠加成多个球
+        try{ if(snapAnim!=null){ snapAnim.cancel(); } }catch(Exception e){}
+        snapAnim=null;
+        if(wm!=null){
+            try{ if(ball!=null){ wm.removeView(ball); ball=null; } }catch(Exception e){ ball=null; }
+            try{ if(menu!=null){ wm.removeView(menu); menu=null; } }catch(Exception e){ menu=null; }
+            try{ if(sub!=null){ wm.removeView(sub); sub=null; } }catch(Exception e){ sub=null; }
+            try{ if(scrim!=null){ wm.removeView(scrim); scrim=null; } }catch(Exception e){ scrim=null; }
+        }
+        menuVisible=false; subVisible=false; transitioning=false;
+        Log.i("FloatBall","service destroyed, overlays removed");
         if(inst==this) inst=null;
         super.onDestroy();
     }
