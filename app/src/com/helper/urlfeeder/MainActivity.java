@@ -104,6 +104,7 @@ public class MainActivity extends Activity {
         if(getIntent()!=null&&ACT_FIX_BROWSER.equals(getIntent().getAction())){
             content.postDelayed(new Runnable(){public void run(){ fixDefaultBrowser(); }},700);
         }
+        checkManageIntent(getIntent());
         // 自动开启网络守护：延后执行不占用首帧，已运行则不重复
         content.postDelayed(new Runnable(){public void run(){ autoEnsureGuard(); }},1200);
     }
@@ -440,18 +441,18 @@ public class MainActivity extends Activity {
         int[] szs={36,46,56,68};
         String[] szn={"小","中","大","特大"};
         LinearLayout szRow=new LinearLayout(this); szRow.setOrientation(LinearLayout.HORIZONTAL);
+        sizeBtns=new Btn[szs.length];
         for(int i=0;i<szs.length;i++){
             final int d=szs[i];
-            boolean sel=(effSz==d);
-            Btn b=gbtn((sel?"● ":"○ ")+szn[i]+" "+d,
-                sel?grad(12,new int[]{0xFF4A7DFF,0xFF1E3A8A}):glass(),
-                new View.OnClickListener(){public void onClick(View v){ setFloatSize(d); }});
+            Btn b=gbtn("",null,new View.OnClickListener(){public void onClick(View v){ setFloatSize(d); }});
             b.setTextSize(12);
+            sizeBtns[i]=b;
             LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(0,-2,1f);
             if(i>0) bp.leftMargin=dp(4);
             szRow.addView(b,bp);
         }
         settingsBody.addView(szRow);
+        refreshSizeButtons(effSz);   // 只更新按钮外观, 不整页重建(不跳滚动)
         settingsBody.addView(gap(4));
         settingsBody.addView(secTitle("📝 悬浮球菜单排序（▲上移 ▼下移，即时生效）"));
         settingsBody.addView(secOpt("➕ 添加要打开的应用",new Runnable(){public void run(){ pickCustomApp(); }}));
@@ -483,6 +484,7 @@ public class MainActivity extends Activity {
     // ---------- 设备自检页 ----------
     LinearLayout checkBody;
     LinearLayout floatOrderList;
+    Btn[] sizeBtns;   // 悬浮球大小选项按钮(供局部高亮, 不整页重建)
     String[] FO_ID={"back","home","app","recent","sweep","net"};
     String[] FO_NAME={"◀ 返回","● 主页","🧰 打开主界面","▦ 最近","🧹 清理后台","🔓 开网"};
     void openCheck(){ try{ com.helper.urlfeeder.FloatBallService.collapseMenu(); }catch(Exception e){} if(checkPage==null) buildCheck(); try{ checkPage.bringToFront(); }catch(Exception e){} checkPage.setVisibility(View.VISIBLE); refreshCheck(); }
@@ -966,8 +968,22 @@ public class MainActivity extends Activity {
                 try{ Intent s=new Intent(this,FloatBallService.class); s.setAction("resize"); startService(s); }catch(Exception e){}
             }
             toast("悬浮球大小 → "+d); addLog("悬浮球大小 → "+d);
-            buildSettings();   // 重建设置页刷新选中态
+            refreshSizeButtons(d);   // 只刷新按钮高亮, 不整页重建(滚动位置不丢)
         }catch(Exception e){ toast("设置失败"); }
+    }
+    void refreshSizeButtons(int sel){
+        try{
+            int[] szs={36,46,56,68};
+            String[] szn={"小","中","大","特大"};
+            if(sizeBtns==null) return;
+            for(int i=0;i<sizeBtns.length&&i<szs.length;i++){
+                Btn b=sizeBtns[i];
+                if(b==null) continue;
+                boolean s=(sel==szs[i]);
+                b.setText((s?"● ":"○ ")+szn[i]+" "+szs[i]);
+                b.setBackground(s?grad(12,new int[]{0xFF4A7DFF,0xFF1E3A8A}):glass());
+            }
+        }catch(Exception e){}
     }
     java.util.List<String> floatOrder(){
         java.util.List<String> ord=new java.util.ArrayList<String>();
@@ -1355,7 +1371,90 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent i){ super.onNewIntent(i); setIntent(i);
         if(i!=null&&ACT_FIX_BROWSER.equals(i.getAction())){ runOnUiThread(new Runnable(){public void run(){ fixDefaultBrowser(); }}); return; }
         if(i!=null&&"com.helper.urlfeeder.action.OPEN_MAIN".equals(i.getAction())){ runOnUiThread(new Runnable(){public void run(){ selectTab(0); }}); return; }
+        checkManageIntent(i);
         if(handleIntent(i)){ runOnUiThread(new Runnable(){public void run(){ selectTab(0); if(pendingUrl!=null) urlInput.setText(pendingUrl); }}); } }
+
+    // 悬浮球应用盘长按 → 改名/移除
+    void checkManageIntent(Intent i){
+        try{
+            if(i==null) return;
+            if("com.helper.urlfeeder.action.MANAGE_FLOAT_APP".equals(i.getAction())){
+                final int ix=i.getIntExtra("idx",-1);
+                content.post(new Runnable(){ public void run(){ manageFloatApp(ix); } });
+            }
+        }catch(Exception e){}
+    }
+    void manageFloatApp(final int idx){
+        try{
+            final java.util.List<String[]> list=customList();
+            if(idx<0||idx>=list.size()){ toast("应用已不存在"); return; }
+            final String[] it=list.get(idx);
+            final android.app.AlertDialog dlg=new android.app.AlertDialog.Builder(this)
+                .setTitle(it[0])
+                .setItems(new String[]{"✏️ 改名","🗑 移除","取消"},
+                    new android.content.DialogInterface.OnClickListener(){ public void onClick(android.content.DialogInterface d,int which){
+                        if(which==0){ d.dismiss(); renameFloatApp(idx,it[0]); }
+                        else if(which==1){ d.dismiss(); removeFloatApp(idx,it[0]); }
+                    }})
+                .create();
+            dlg.show();
+        }catch(Exception e){}
+    }
+    void renameFloatApp(final int idx,final String oldName){
+        try{
+            final java.util.List<String[]> list=customList();
+            final EditText et=new EditText(this);
+            et.setText(oldName); et.setTextSize(15); et.setTextColor(Color.WHITE);
+            et.setBackground(shp(12,0x66000000)); et.setPadding(dp(12),dp(8),dp(12),dp(8));
+            LinearLayout host=new LinearLayout(this); host.setOrientation(LinearLayout.VERTICAL);
+            host.setPadding(dp(2),dp(8),dp(2),0);
+            host.addView(et,new LinearLayout.LayoutParams(-1,-2));
+            final android.app.AlertDialog dlg=new android.app.AlertDialog.Builder(this)
+                .setTitle("重命名")
+                .setView(host)
+                .setPositiveButton("保存",null)
+                .setNegativeButton("取消",null)
+                .create();
+            dlg.setOnShowListener(new android.content.DialogInterface.OnShowListener(){ public void onShow(android.content.DialogInterface d){
+                dlg.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener(){ public void onClick(View v){
+                    String nm=et.getText()==null?"":et.getText().toString().trim();
+                    if(nm.length()==0) nm=oldName;
+                    try{ dlg.dismiss(); }catch(Exception e){}
+                    try{
+                        java.util.List<String[]> lst=customList();
+                        if(idx>=0&&idx<lst.size()){ lst.get(idx)[0]=nm; saveCustom(lst); }
+                        refreshFloatOrder();
+                        reloadFloatBall();
+                        toast("已改名 → "+nm);
+                    }catch(Exception e){}
+                }});
+            }});
+            dlg.show();
+        }catch(Exception e){}
+    }
+    void removeFloatApp(final int idx,String name){
+        try{
+            if(idx<0) return;
+            final int ix=idx;
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("移除")
+                .setMessage("确定从悬浮球移除「"+name+"」?")
+                .setPositiveButton("移除",new android.content.DialogInterface.OnClickListener(){ public void onClick(android.content.DialogInterface d,int w){
+                    try{ delCustom("c"+ix); }catch(Exception e){}
+                }})
+                .setNegativeButton("取消",null)
+                .show();
+        }catch(Exception e){}
+    }
+    void reloadFloatBall(){
+        try{
+            if(com.helper.urlfeeder.FloatBallService.running){
+                Intent s=new Intent(this,FloatBallService.class);
+                s.setAction("reload");
+                startService(s);
+            }
+        }catch(Exception e){}
+    }
 
 
     // 智能浏览器轮换：自动收集可用浏览器，每次点击轮换下一个（排除自身与被拉黑的白名单浏览器）
