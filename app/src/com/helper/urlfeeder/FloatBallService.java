@@ -329,10 +329,10 @@ public class FloatBallService extends Service {
     }
     // 按项数自适应: 项越多按钮越小、半径略大(保持单圈不重叠)
     int[] ringFor(int n){
-        int d=60,r=102;   // dp
-        if(n>8){ d=54; r=106; }
-        if(n>13){ d=46; r=112; }
-        if(n>18){ d=38; r=116; }
+        int d=70,r=104;   // dp
+        if(n>8){ d=58; r=108; }
+        if(n>13){ d=50; r=114; }
+        if(n>18){ d=42; r=118; }
         int dd=dp(d), rr=dp(r);
         int dq=discSize();
         if(rr+dd/2>dq/2-dp(6)) rr=dq/2-dd/2-dp(6);
@@ -524,7 +524,7 @@ public class FloatBallService extends Service {
         TextView tv=new TextView(this);
         tv.setText(p[0]);
         tv.setTextColor(center?0xFF1A1A1A:0xFFFFFFFF);
-        tv.setTextSize(center?16f:14f);
+        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,d*(center?0.36f:0.48f));   // 图标按直径比例放大
         tv.setGravity(Gravity.CENTER);
         if(!center) tv.setShadowLayer(Math.max(2,dp(2)),0,Math.max(1,dp(1)),0xCC000000);
         t.addView(tv);
@@ -532,8 +532,11 @@ public class FloatBallService extends Service {
             TextView nv=new TextView(this);
             nv.setText(p[1]);
             nv.setTextColor(center?0xE6000000:0xFFEDF3FF);
-            nv.setTextSize(8.5f); nv.setGravity(Gravity.CENTER);
+            nv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,d*(center?0.19f:0.22f));  // 名称同步放大
+            nv.setGravity(Gravity.CENTER);
             nv.setMaxLines(1); nv.setIncludeFontPadding(false);
+            nv.setMaxWidth((int)(d*(center?1.0f:1.3f)));
+            nv.setEllipsize(android.text.TextUtils.TruncateAt.END);
             if(!center) nv.setShadowLayer(Math.max(2,dp(2)),0,Math.max(1,dp(1)),0xCC000000);
             t.addView(nv);
         }
@@ -813,7 +816,7 @@ public class FloatBallService extends Service {
         t.setGravity(Gravity.CENTER);
         t.setBackground(null);        // 不要白色圆底, 图标直接浮在盘面
         ImageView iv=new ImageView(this);
-        int is=(int)(d*0.62f);
+        int is=(int)(d*0.74f);
         android.graphics.drawable.Drawable ic=null;
         try{ ic=getPackageManager().getApplicationIcon(a[1]); }catch(Exception e){}
         if(ic!=null) iv.setImageDrawable(ic);
@@ -821,8 +824,9 @@ public class FloatBallService extends Service {
         t.addView(iv,new LinearLayout.LayoutParams(is,is));
         TextView nv=new TextView(this);
         nv.setText(a[0]); nv.setTextColor(0xFFEDF3FF);
-        nv.setTextSize(8.5f); nv.setGravity(Gravity.CENTER);
-        nv.setMaxLines(1); nv.setMaxWidth(d-dp(6));
+        nv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,d*0.22f);
+        nv.setGravity(Gravity.CENTER);
+        nv.setMaxLines(1); nv.setMaxWidth((int)(d*1.3f));
         nv.setEllipsize(android.text.TextUtils.TruncateAt.END);
         nv.setIncludeFontPadding(false);
         nv.setShadowLayer(Math.max(2,dp(2)),0,Math.max(1,dp(1)),0xCC000000);
