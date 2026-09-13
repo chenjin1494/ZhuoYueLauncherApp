@@ -29,6 +29,7 @@ import android.os.IBinder;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.os.Parcel;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.animation.DecelerateInterpolator;
@@ -66,6 +67,8 @@ public class MainActivity extends Activity {
     ScrollView appsScroll;
     EditText appSearch;
     List<AppEntry> allApps=new ArrayList<AppEntry>();
+    boolean appsReady=false, appsLoading=false, appsDirty=true;   // 应用页缓存: 避免每次进页都主线程重载
+    Runnable searchTick=null;
     String appQuery="";
     LinearLayout pullHead;
     TextView pullTv;
@@ -107,6 +110,8 @@ public class MainActivity extends Activity {
         checkManageIntent(getIntent());
         // 自动开启网络守护：延后执行不占用首帧，已运行则不重复
         content.postDelayed(new Runnable(){public void run(){ autoEnsureGuard(); }},1200);
+        // 预热"应用"页缓存(后台线程枚举+取图标), 使首次点进应用页即时显示
+        content.postDelayed(new Runnable(){public void run(){ try{ buildApps(); }catch(Exception e){} }},900);
     }
     void autoEnsureGuard(){
         try{
@@ -283,7 +288,15 @@ public class MainActivity extends Activity {
         clearBtn.setVisibility(View.GONE);
         appSearch.addTextChangedListener(new TextWatcher(){
             public void beforeTextChanged(CharSequence c,int a,int b,int d){}
-            public void onTextChanged(CharSequence c,int a,int b,int d){ appQuery=c==null?"":c.toString().trim().toLowerCase(); renderApps(); }
+            public void onTextChanged(CharSequence c,int a,int b,int d){
+                appQuery=c==null?"":c.toString().trim().toLowerCase();
+                appsDirty=true;
+                if(searchTick==null){
+                    searchTick=new Runnable(){ public void run(){ if(appsReady&&curTab==1) renderApps(); } };
+                }
+                uiH.removeCallbacks(searchTick);
+                uiH.postDelayed(searchTick,120);   // 输入防抖, 避免每敲一下重建整页
+            }
             public void afterTextChanged(Editable e){
                 clearBtn.setVisibility(e!=null&&e.length()>0?View.VISIBLE:View.GONE);
             }
@@ -712,6 +725,7 @@ public class MainActivity extends Activity {
         applyInsets();
         applyBg();
         if(urlInput!=null&&u.length()>0) urlInput.setText(u);
+        appsDirty=true;              // 视图树已重建, 需要重新渲染(数据仍用缓存)
         selectTab(t);
         if(t==1) buildApps();
     }
@@ -1291,7 +1305,7 @@ public class MainActivity extends Activity {
         }};
         uiH.postDelayed(spinTick,16);
         uiH.postDelayed(new Runnable(){ public void run(){
-            try{ buildApps(); }catch(Exception e){}
+            try{ appsReady=false; appsDirty=true; buildApps(); }catch(Exception e){}
             if(pullTv!=null) pullTv.setText("✓ 已刷新");
             if(appsList!=null){ appsList.post(new Runnable(){public void run(){ appsScroll.scrollTo(0,0); }}); }
             toast("应用列表已刷新 ✓");
@@ -1305,18 +1319,53 @@ public class MainActivity extends Activity {
     }
     void buildApps(){
         if(appsList==null) return;
-        allApps.clear();
+        if(appsReady){                     // 已缓存: 只有内容变化才重建视图, 否则直接显示(零开销)
+            if(appsDirty&&curTab==1) renderApps();
+            return;
+        }
+        if(appsLoading) return;            // 正在后台加载
+        appsLoading=true;
+        showAppsLoading();
+        new Thread(new Runnable(){ public void run(){
+            final List<AppEntry> tmp=new ArrayList<AppEntry>();
+            long t0=System.currentTimeMillis();
+            try{
+                PackageManager pm=getPackageManager();
+                Intent mi=new Intent(Intent.ACTION_MAIN); mi.addCategory(Intent.CATEGORY_LAUNCHER);
+                List<ResolveInfo> ri=pm.queryIntentActivities(mi,0);
+                for(ResolveInfo rr:ri){
+                    try{
+                        String pkg=rr.activityInfo.packageName, act=rr.activityInfo.name;
+                        String lb=rr.loadLabel(pm).toString();
+                        Drawable ic=null; try{ ic=rr.loadIcon(pm); }catch(Exception e){}
+                        tmp.add(new AppEntry(lb,pkg,act,ic));
+                    }catch(Exception e){}
+                }
+                Collections.sort(tmp,new Comparator<AppEntry>(){public int compare(AppEntry x,AppEntry y){return x.label.compareToIgnoreCase(y.label);}});
+            }catch(Exception e){}
+            final long ms=System.currentTimeMillis()-t0;
+            runOnUiThread(new Runnable(){ public void run(){
+                allApps.clear(); allApps.addAll(tmp);
+                appsLoading=false; appsReady=true; appsDirty=true;
+                Log.i("AppsPage","loaded "+tmp.size()+" apps in "+ms+"ms (background)");
+                if(curTab==1) renderApps();
+            }});
+        }},"apps-loader").start();
+    }
+    void showAppsLoading(){
         try{
-            PackageManager pm=getPackageManager();
-            Intent mi=new Intent(Intent.ACTION_MAIN); mi.addCategory(Intent.CATEGORY_LAUNCHER);
-            List<ResolveInfo> ri=pm.queryIntentActivities(mi,0);
-            for(ResolveInfo rr:ri){ try{ String pkg=rr.activityInfo.packageName; String act=rr.activityInfo.name; String lb=rr.loadLabel(pm).toString(); Drawable ic=null; try{ic=rr.loadIcon(pm);}catch(Exception e){} allApps.add(new AppEntry(lb,pkg,act,ic)); }catch(Exception e){} }
-            Collections.sort(allApps,new Comparator<AppEntry>(){public int compare(AppEntry x,AppEntry y){return x.label.compareToIgnoreCase(y.label);}});
+            appsList.removeAllViews();
+            if(pullHead!=null) appsList.addView(pullHead);
+            TextView t=new TextView(this);
+            t.setText("正在加载应用列表…"); t.setTextColor(0xBBFFFFFF); t.setTextSize(13);
+            t.setPadding(dp(6),dp(18),dp(6),dp(6));
+            Fonts.apply(t);
+            appsList.addView(t);
         }catch(Exception e){}
-        renderApps();
     }
     void renderApps(){
         if(appsList==null) return;
+        long t0=System.currentTimeMillis();
         appsList.removeAllViews();
         if(pullHead!=null){ appsList.addView(pullHead); }
         String q=appQuery;
@@ -1334,7 +1383,10 @@ public class MainActivity extends Activity {
         if(q!=null&&q.length()>0) c.setText("共 "+shown+" 个匹配 / "+allApps.size()+" 个应用（点击启动，长按看详情）");
         else c.setText("共 "+shown+" 个应用（点击启动，长按看详情）");
         c.setTextSize(12); c.setTextColor(0xBBFFFFFF); c.setPadding(dp(4),dp(12),dp(4),2);
+        Fonts.apply(c);
         appsList.addView(c);
+        appsDirty=false;
+        Log.i("AppsPage","rendered "+shown+" rows in "+(System.currentTimeMillis()-t0)+"ms");
     }
     void addAppRow(final AppEntry e,int idx){
         LinearLayout row=new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
