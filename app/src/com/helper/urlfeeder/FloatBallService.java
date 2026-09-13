@@ -433,17 +433,18 @@ public class FloatBallService extends Service {
         int dq=discSize(); int cx=dq/2, cy=dq/2;
         int[] ring=ringFor(n); int itemD=ring[0], R=ring[1];
         decorateDisc(menu,n,itemD,R);   // 盘心光环+扇区分隔线(美化分层)
-        int tw=labelBoxW(itemD,R,n), th=(int)(itemD*1.2f);
+        int tw=labelBoxW(itemD,R,n), th=(int)(itemD*1.05f);
+        int bias=dp(12);                                  // 内容沿半径外移, 避免压到盘心圆
         for(int i=0;i<n;i++){
             double a=Math.toRadians(-90.0+360.0*i/n);   // 从顶部开始顺时针
-            int px=cx+(int)Math.round(R*Math.cos(a))-tw/2;
-            int py=cy+(int)Math.round(R*Math.sin(a))-th/2;
+            int px=cx+(int)Math.round((R+bias)*Math.cos(a))-tw/2;
+            int py=cy+(int)Math.round((R+bias)*Math.sin(a))-th/2;
             View t=wheelTile(labs.get(i),acts.get(i),itemD,false);
             FrameLayout.LayoutParams flp=new FrameLayout.LayoutParams(tw,th);
             flp.leftMargin=px; flp.topMargin=py;
             menu.addView(t,flp);
         }
-        int cd=dp(84);
+        int cd=dp(74);
         View cc=wheelTile("✕ 收起",new Runnable(){public void run(){ hideMenu(); }},cd,true);
         FrameLayout.LayoutParams clp=new FrameLayout.LayoutParams(cd,cd);
         clp.leftMargin=cx-cd/2; clp.topMargin=cy-cd/2;
@@ -467,7 +468,7 @@ public class FloatBallService extends Service {
             int dq=discSize(); int cx=dq/2;
             int innerEdge=R-itemD/2;                 // 项内缘
             // 1) "中间的圆": 从盘心铺到项内缘的柔和浅圈 + 外描边
-            int hubR=Math.max(dp(10),innerEdge-dp(2));
+            int hubR=Math.max(dp(10),innerEdge-dp(12));
             View hv=circleView(hubR*2,0x18FFFFFF,0x4DFFFFFF);
             FrameLayout.LayoutParams hlp=new FrameLayout.LayoutParams(hubR*2,hubR*2);
             hlp.leftMargin=cx-hubR; hlp.topMargin=cx-hubR;
@@ -743,12 +744,13 @@ public class FloatBallService extends Service {
             // 应用真实图标围成一圈
             final Runnable[] acts=new Runnable[n];
             final Runnable[] longActs=new Runnable[n];
-            int tw2=labelBoxW(itemD,R,n), th2=(int)(itemD*1.3f);
+            int tw2=labelBoxW(itemD,R,n), th2=(int)(itemD*1.12f);
+            int bias2=dp(12);
             for(int i=0;i<n;i++){
                 final String[] a=apps.get(i);
                 double ang=Math.toRadians(-90.0+360.0*i/n);
-                int px=cx+(int)Math.round(R*Math.cos(ang))-tw2/2;
-                int py=cy+(int)Math.round(R*Math.sin(ang))-th2/2;
+                int px=cx+(int)Math.round((R+bias2)*Math.cos(ang))-tw2/2;
+                int py=cy+(int)Math.round((R+bias2)*Math.sin(ang))-th2/2;
                 View t=appTile(a,i,itemD);
                 FrameLayout.LayoutParams flp=new FrameLayout.LayoutParams(tw2,th2);
                 flp.leftMargin=px; flp.topMargin=py;
@@ -758,7 +760,7 @@ public class FloatBallService extends Service {
                 longActs[i]=new Runnable(){ public void run(){ openManageApp(ix); } };
             }
             // 盘心: ‹ 返回主轮盘 (整块中间圆可点)
-            int cd=dp(84);
+            int cd=dp(74);
             View back=wheelTile("‹ 返回",new Runnable(){ public void run(){ backToWheel(); } },cd,true);
             FrameLayout.LayoutParams blp2=new FrameLayout.LayoutParams(cd,cd);
             blp2.leftMargin=cx-cd/2; blp2.topMargin=cy-cd/2;
