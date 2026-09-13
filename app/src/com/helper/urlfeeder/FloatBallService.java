@@ -626,11 +626,27 @@ public class FloatBallService extends Service {
     }
 
     // 截图: Shizuku 可用则静默 screencap; 否则交给主界面走 MediaProjection 授权
+    // 截图前临时隐藏悬浮球(避免被抓进画面), 抓完恢复
+    void hideBallForShot(){
+        try{ if(ball!=null) ball.setVisibility(View.GONE); }catch(Exception e){}
+        try{ if(scrim!=null) scrim.setVisibility(View.GONE); }catch(Exception e){}
+        try{ if(menu!=null) menu.setVisibility(View.GONE); }catch(Exception e){}
+        try{ if(sub!=null) sub.setVisibility(View.GONE); }catch(Exception e){}
+    }
+    void showBallAfterShot(){
+        try{ if(ball!=null) ball.setVisibility(View.VISIBLE); }catch(Exception e){}
+    }
     void captureScreen(){
+        hideBallForShot();
+        hd.postDelayed(new Runnable(){ public void run(){ doCaptureScreen(); } },170);
+    }
+    void doCaptureScreen(){
         // 1) 无障碍截图(免授权框/免 Shizuku/无系统过场)
         try{
             if(ShotAccessibilityService.ready()){
-                if(ShotAccessibilityService.capture(this)){ toast("正在截图…"); return; }
+                if(ShotAccessibilityService.capture(this,new Runnable(){ public void run(){ showBallAfterShot(); } })){
+                    toast("正在截图…"); return;
+                }
             }
         }catch(Exception e){}
         // 2) Shizuku 静默 screencap
@@ -645,13 +661,14 @@ public class FloatBallService extends Service {
                         msg="截图已保存: Pictures/Screenshots/"+name;
                     }catch(Exception e){ msg="截图失败(Shizuku)"; }
                     final String m=msg;
-                    hd.post(new Runnable(){ public void run(){ toast(m); Log.i("FloatBall","shot "+m); }});
+                    hd.post(new Runnable(){ public void run(){ toast(m); Log.i("FloatBall","shot "+m); showBallAfterShot(); }});
                 }},"shot-shizuku").start();
                 toast("正在截图…");
                 return;
             }
         }catch(Exception e){}
         try{
+            hd.postDelayed(new Runnable(){ public void run(){ showBallAfterShot(); } },1600);   // 兜底恢复
             // 用透明 Activity 申请授权(不拉起主界面); 已授权则直接复用, 全程静默
             Intent a=new Intent(this,ShotActivity.class);
             a.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS|Intent.FLAG_ACTIVITY_NO_ANIMATION);

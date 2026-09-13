@@ -28,14 +28,15 @@ public class ShotAccessibilityService extends AccessibilityService {
         }catch(Exception e){ return false; }
     }
 
-    /** 触发一次截图; 返回 false 表示不可用(调用方应回退其它方案) */
-    public static boolean capture(final Context ctx){
+    /** 触发一次截图; 返回 false 表示不可用(调用方应回退其它方案); onDone 无论成败都会回调 */
+    public static boolean capture(final Context ctx,final Runnable onDone){
         if(!ready()) return false;
         final ShotAccessibilityService s=inst;
         try{
             s.takeScreenshot(Display.DEFAULT_DISPLAY,s.getMainExecutor(),new TakeScreenshotCallback(){
                 public void onSuccess(ScreenshotResult r){
                     try{
+                        Log.i("ShotA11y","screenshot ok");
                         HardwareBuffer buf=r.getHardwareBuffer();
                         Bitmap hb=Bitmap.wrapHardwareBuffer(buf,r.getColorSpace());
                         Bitmap sw=null;
@@ -49,11 +50,14 @@ public class ShotAccessibilityService extends AccessibilityService {
                     }catch(Exception e){
                         Log.e("ShotA11y","save err",e);
                         toast(ctx,"截图失败: "+e.getClass().getSimpleName());
+                    }finally{
+                        if(onDone!=null){ try{ onDone.run(); }catch(Exception e){} }
                     }
                 }
                 public void onFailure(int err){
                     Log.e("ShotA11y","takeScreenshot fail code="+err);
                     toast(ctx,"截图失败(错误码 "+err+")");
+                    if(onDone!=null){ try{ onDone.run(); }catch(Exception e){} }
                 }
             });
             return true;
