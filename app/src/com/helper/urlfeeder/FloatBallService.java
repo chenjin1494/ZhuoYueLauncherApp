@@ -459,13 +459,13 @@ public class FloatBallService extends Service {
             int innerEdge=R-itemD/2;                 // 项内缘
             // 1) "中间的圆": 从盘心铺到项内缘的柔和浅圈 + 外描边
             int hubR=Math.max(dp(10),innerEdge-dp(2));
-            View hv=circleView(hubR*2,0x12FFFFFF,0x45FFFFFF);
+            View hv=circleView(hubR*2,0x18FFFFFF,0x4DFFFFFF);
             FrameLayout.LayoutParams hlp=new FrameLayout.LayoutParams(hubR*2,hubR*2);
             hlp.leftMargin=cx-hubR; hlp.topMargin=cx-hubR;
             host.addView(hv,hlp);
             // 2) 周围区域外沿细环
             int outerEdge=dq/2-dp(4);
-            View rim=circleView(outerEdge*2,0x00000000,0x22FFFFFF);
+            View rim=circleView(outerEdge*2,0x00000000,0x30FFFFFF);
             FrameLayout.LayoutParams rlp=new FrameLayout.LayoutParams(outerEdge*2,outerEdge*2);
             rlp.leftMargin=cx-outerEdge; rlp.topMargin=cx-outerEdge;
             host.addView(rim,rlp);
@@ -497,7 +497,7 @@ public class FloatBallService extends Service {
             int px=cx+(int)Math.round(rmid*Math.cos(a));
             int py=cx+(int)Math.round(rmid*Math.sin(a));
             View ln=new View(this);
-            ln.setBackgroundColor(0x26FFFFFF);
+            ln.setBackgroundColor(0x38FFFFFF);
             int w=dp(1);
             FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(w,len);
             lp.leftMargin=px-w/2; lp.topMargin=py-len/2;
@@ -511,22 +511,30 @@ public class FloatBallService extends Service {
         LinearLayout t=new LinearLayout(this);
         t.setOrientation(LinearLayout.VERTICAL);
         t.setGravity(Gravity.CENTER);
-        GradientDrawable bg=new GradientDrawable();
-        bg.setShape(GradientDrawable.OVAL);
-        if(center){ bg.setColor(0xE6FFFFFF); bg.setStroke(dp(1),0xFFFFFFFF); }
-        else { bg.setColor(0x59FFFFFF); bg.setStroke(dp(1),0xAAFFFFFF); }
-        t.setBackground(bg);
+        if(center){
+            // 盘心按钮保留白色圆底(作为"中间的圆"的中心)
+            GradientDrawable bg=new GradientDrawable();
+            bg.setShape(GradientDrawable.OVAL);
+            bg.setColor(0xE6FFFFFF);
+            bg.setStroke(dp(1),0xFFFFFFFF);
+            t.setBackground(bg);
+        }else{
+            t.setBackground(null);   // 去掉功能项外面的白色圆底
+        }
         TextView tv=new TextView(this);
         tv.setText(p[0]);
-        tv.setTextColor(0xFF1A1A1A);
+        tv.setTextColor(center?0xFF1A1A1A:0xFFFFFFFF);
         tv.setTextSize(center?16f:14f);
         tv.setGravity(Gravity.CENTER);
+        if(!center) tv.setShadowLayer(Math.max(2,dp(2)),0,Math.max(1,dp(1)),0xCC000000);
         t.addView(tv);
         if(p[1]!=null&&p[1].length()>0){
             TextView nv=new TextView(this);
-            nv.setText(p[1]); nv.setTextColor(0xE6000000);
+            nv.setText(p[1]);
+            nv.setTextColor(center?0xE6000000:0xFFEDF3FF);
             nv.setTextSize(8.5f); nv.setGravity(Gravity.CENTER);
             nv.setMaxLines(1); nv.setIncludeFontPadding(false);
+            if(!center) nv.setShadowLayer(Math.max(2,dp(2)),0,Math.max(1,dp(1)),0xCC000000);
             t.addView(nv);
         }
         t.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ try{ act.run(); }catch(Exception e){} } });
@@ -803,39 +811,25 @@ public class FloatBallService extends Service {
         LinearLayout t=new LinearLayout(this);
         t.setOrientation(LinearLayout.VERTICAL);
         t.setGravity(Gravity.CENTER);
-        GradientDrawable bg=new GradientDrawable();
-        bg.setShape(GradientDrawable.OVAL);
-        bg.setColor(0x59FFFFFF);
-        bg.setStroke(dp(1),0xAAFFFFFF);
-        t.setBackground(bg);
+        t.setBackground(null);        // 不要白色圆底, 图标直接浮在盘面
         ImageView iv=new ImageView(this);
-        int is=(int)(d*0.52f);
+        int is=(int)(d*0.62f);
         android.graphics.drawable.Drawable ic=null;
         try{ ic=getPackageManager().getApplicationIcon(a[1]); }catch(Exception e){}
         if(ic!=null) iv.setImageDrawable(ic);
         else{ iv.setBackground(makeOrb()); }
         t.addView(iv,new LinearLayout.LayoutParams(is,is));
         TextView nv=new TextView(this);
-        nv.setText(a[0]); nv.setTextColor(0xFF1A1A1A);
+        nv.setText(a[0]); nv.setTextColor(0xFFEDF3FF);
         nv.setTextSize(8.5f); nv.setGravity(Gravity.CENTER);
         nv.setMaxLines(1); nv.setMaxWidth(d-dp(6));
         nv.setEllipsize(android.text.TextUtils.TruncateAt.END);
         nv.setIncludeFontPadding(false);
+        nv.setShadowLayer(Math.max(2,dp(2)),0,Math.max(1,dp(1)),0xCC000000);
         t.addView(nv);
         t.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ hideSubNow(); launchApp(a[1]); } });
         t.setOnLongClickListener(new View.OnLongClickListener(){
-            public boolean onLongClick(View v){
-                hideMenu();   // 收起所有圆盘
-                try{
-                    Intent mg=new Intent(FloatBallService.this,MainActivity.class);
-                    mg.setAction("com.helper.urlfeeder.action.MANAGE_FLOAT_APP");
-                    mg.putExtra("idx",idx);
-                    mg.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-                    startActivity(mg);
-                    Log.i("FloatBall","manage app idx="+idx);
-                }catch(Exception e){ Log.e("FloatBall","manage fail",e); }
-                return true;
-            }
+            public boolean onLongClick(View v){ openManageApp(idx); return true; }
         });
         return t;
     }
