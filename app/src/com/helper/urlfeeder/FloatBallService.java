@@ -615,11 +615,11 @@ public class FloatBallService extends Service {
             }
         }catch(Exception e){}
         try{
-            Intent a=new Intent(this,MainActivity.class);
-            a.setAction("com.helper.urlfeeder.action.SCREENSHOT");
-            a.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+            // 用透明 Activity 申请授权(不拉起主界面); 已授权则直接复用, 全程静默
+            Intent a=new Intent(this,ShotActivity.class);
+            a.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
             startActivity(a);
-            Log.i("FloatBall","shot -> ask permission");
+            Log.i("FloatBall","shot -> "+(ShotService.hasProjection()?"reuse":"ask permission"));
         }catch(Exception e){ toast("无法发起截图"); }
     }
     // 清理后台: 只结束系统允许杀的后台/缓存进程, 不依赖 Shizuku

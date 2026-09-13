@@ -19,6 +19,7 @@ import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.os.Handler;
 import android.os.IBinder;
 import android.provider.MediaStore;
 import android.util.DisplayMetrics;
@@ -32,50 +33,85 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 
 /**
- * 截图服务(MediaProjection): 由主界面拿到用户授权后启动,
- * 抓取一帧并保存到相册 Pictures/Screenshots, 完成后自动停止。
- * Android 10+ 必须以前台服务(mediaProjection 类型)运行。
+ * 截图服务(MediaProjection): 抓一帧保存到相册 Pictures/Screenshots。
+ * 首次由 ShotActivity 取到授权后, 授权(投影+虚拟屏)会保留复用,
+ * 之后截图只需以前台服务(mediaProjection 类型)运行即可, 不再弹授权框。
  */
 public class ShotService extends Service {
     static final int NOTI_ID=9001;
     static final String CH_ID="shot";
 
+    // 复用中的投影资源(进程存活期间保留)
+    private static MediaProjection sProj=null;
+    private static VirtualDisplay sVd=null;
+    private static ImageReader sReader=null;
+    private static int sW=0,sH=0,sDpi=0;
+    private static boolean sBusy=false;
+
+    public static boolean hasProjection(){
+        return sProj!=null&&sVd!=null&&sReader!=null;
+    }
+    static void releaseAll(){
+        try{ if(sVd!=null) sVd.release(); }catch(Exception e){}
+        try{ if(sReader!=null) sReader.close(); }catch(Exception e){}
+        try{ if(sProj!=null) sProj.stop(); }catch(Exception e){}
+        sVd=null; sReader=null; sProj=null; sBusy=false;
+    }
+
     public IBinder onBind(Intent i){ return null; }
 
     public int onStartCommand(Intent it,int f,int s){
         startForegroundSafely();
+        String act=(it==null)?null:it.getAction();
         try{
+            if("capture".equals(act)){
+                if(!hasProjection()){ toast("截图授权已失效, 请重试"); stopSelf(); return START_NOT_STICKY; }
+                grab();
+                return START_NOT_STICKY;
+            }
             int code=(it==null)?0:it.getIntExtra("code",0);
             Intent data=(it==null)?null:(Intent)it.getParcelableExtra("data");
             if(data==null){ toast("截图授权数据丢失"); stopSelf(); return START_NOT_STICKY; }
             MediaProjectionManager mpm=(MediaProjectionManager)getSystemService(Context.MEDIA_PROJECTION_SERVICE);
-            final MediaProjection proj=mpm.getMediaProjection(code,data);
-            if(proj==null){ toast("截图授权失败"); stopSelf(); return START_NOT_STICKY; }
-            capture(proj);
+            releaseAll();
+            sProj=mpm.getMediaProjection(code,data);
+            if(sProj==null){ toast("截图授权失败"); stopSelf(); return START_NOT_STICKY; }
+            try{
+                sProj.registerCallback(new MediaProjection.Callback(){
+                    public void onStop(){ Log.i("Shot","projection stopped by system"); releaseAll(); }
+                },new Handler(getMainLooper()));
+            }catch(Exception e){}
+            setupDisplay();
+            grab();
         }catch(Exception e){
             Log.e("Shot","start err",e);
             toast("截图失败: "+e.getClass().getSimpleName());
+            releaseAll();
             stopSelf();
         }
         return START_NOT_STICKY;
     }
 
-    void capture(final MediaProjection proj){
+    void setupDisplay(){
+        DisplayMetrics dm=new DisplayMetrics();
+        android.view.WindowManager wm=(android.view.WindowManager)getSystemService(Context.WINDOW_SERVICE);
+        wm.getDefaultDisplay().getRealMetrics(dm);
+        sW=dm.widthPixels; sH=dm.heightPixels; sDpi=dm.densityDpi;
+        sReader=ImageReader.newInstance(sW,sH,PixelFormat.RGBA_8888,2);
+        sVd=sProj.createVirtualDisplay("wft-shot",sW,sH,sDpi,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,sReader.getSurface(),null,null);
+    }
+
+    void grab(){
+        if(sBusy){ toast("正在截图…"); stopSelf(); return; }
+        sBusy=true;
         new Thread(new Runnable(){ public void run(){
-            ImageReader reader=null; VirtualDisplay vd=null;
+            boolean ok=false;
             try{
-                DisplayMetrics dm=new DisplayMetrics();
-                android.view.WindowManager wm=(android.view.WindowManager)getSystemService(Context.WINDOW_SERVICE);
-                wm.getDefaultDisplay().getRealMetrics(dm);
-                int w=dm.widthPixels, h=dm.heightPixels, dpi=dm.densityDpi;
-                reader=ImageReader.newInstance(w,h,PixelFormat.RGBA_8888,2);
-                vd=proj.createVirtualDisplay("wft-shot",w,h,dpi,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,reader.getSurface(),null,null);
-                // 等一帧(最多约1.6s), 期间系统画面已镜像进来
                 Image img=null;
                 for(int i=0;i<16&&img==null;i++){
                     try{ Thread.sleep(100); }catch(Exception e){}
-                    img=reader.acquireLatestImage();
+                    img=sReader.acquireLatestImage();
                 }
                 if(img==null){ toast("截图超时, 请重试"); return; }
                 Bitmap bmp=null;
@@ -83,6 +119,7 @@ public class ShotService extends Service {
                     Image.Plane p=img.getPlanes()[0];
                     java.nio.ByteBuffer buf=p.getBuffer();
                     int pixelStride=p.getPixelStride(), rowStride=p.getRowStride();
+                    int w=sW,h=sH;
                     int rowPadding=rowStride-pixelStride*w;
                     bmp=Bitmap.createBitmap(w+rowPadding/pixelStride,h,Bitmap.Config.ARGB_8888);
                     bmp.copyPixelsFromBuffer(buf);
@@ -93,15 +130,15 @@ public class ShotService extends Service {
                 }finally{ try{ img.close(); }catch(Exception e){} }
                 final String saved=save(bmp);
                 try{ bmp.recycle(); }catch(Exception e){}
-                if(saved!=null) toast("截图已保存到相册: "+saved);
+                ok=(saved!=null);
+                if(ok) toast("截图已保存到相册: "+saved);
                 else toast("截图保存失败");
             }catch(Exception e){
                 Log.e("Shot","capture err",e);
                 toast("截图失败: "+e.getClass().getSimpleName());
             }finally{
-                try{ if(vd!=null) vd.release(); }catch(Exception e){}
-                try{ if(reader!=null) reader.close(); }catch(Exception e){}
-                try{ proj.stop(); }catch(Exception e){}
+                releaseAll();                  // 用完即释放(前台服务停止时系统也会收回投影)
+                sBusy=false;
                 stopSelf();
             }
         }},"shot-worker").start();
@@ -155,8 +192,10 @@ public class ShotService extends Service {
         }catch(Exception e){ Log.e("Shot","fg err",e); }
     }
     void toast(final String m){
-        try{ android.os.Handler h=new android.os.Handler(getMainLooper());
-            h.post(new Runnable(){ public void run(){ try{ Toast.makeText(ShotService.this,m,Toast.LENGTH_LONG).show(); }catch(Exception e){} }});
+        try{
+            new Handler(getMainLooper()).post(new Runnable(){ public void run(){
+                try{ Toast.makeText(ShotService.this,m,Toast.LENGTH_LONG).show(); }catch(Exception e){}
+            }});
         }catch(Exception e){}
     }
 }
