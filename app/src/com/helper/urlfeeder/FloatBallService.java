@@ -280,7 +280,7 @@ public class FloatBallService extends Service {
 
     // ---------------- 轮盘渲染 ----------------
     // 可排序菜单项 id → 标签/动作 (注意: 不能以 c 开头, c 前缀留给自定义应用 c0..cN)
-    String[] ORDER_ID={"home","app","sweep","net"};   // 返回/最近已移除
+    String[] ORDER_ID={"home","app","sweep","shot","net"};   // 返回/最近已移除
     void buildMenu(){
         String saved=null;
         try{ saved=getSharedPreferences("pf",0).getString("float_order",null); }catch(Exception e){}
@@ -316,6 +316,7 @@ public class FloatBallService extends Service {
         if("app".equals(id)) return "🧰 打开主界面";
         if("recent".equals(id)) return "▦ 最近";
         if("sweep".equals(id)) return "🧹 清理后台";
+        if("shot".equals(id)) return "📸 截图";
         if("net".equals(id)) return "🔓 开网";
         return null;
     }
@@ -325,6 +326,7 @@ public class FloatBallService extends Service {
         if("app".equals(id)) return new Runnable(){public void run(){ openApp(); hideMenu(); }};
         if("recent".equals(id)) return new Runnable(){public void run(){ shellKey("187"); hideMenu(); }};
         if("sweep".equals(id)) return new Runnable(){public void run(){ hideMenu(); clearBackground(); }};
+        if("shot".equals(id)) return new Runnable(){public void run(){ hideMenu(); captureScreen(); }};
         if("net".equals(id)) return new Runnable(){public void run(){ fireOpenNet(); hideMenu(); }};
         return new Runnable(){public void run(){ hideMenu(); }};
     }
@@ -593,6 +595,33 @@ public class FloatBallService extends Service {
         }catch(Exception e){ Log.e("FloatBall","launch fail "+pkg,e); }
     }
 
+    // 截图: Shizuku 可用则静默 screencap; 否则交给主界面走 MediaProjection 授权
+    void captureScreen(){
+        try{
+            if(ShizukuUtil.running()&&ShizukuUtil.permission()==0){
+                final String name="WFT_"+new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date())+".png";
+                final String path="/sdcard/Pictures/Screenshots/"+name;
+                new Thread(new Runnable(){ public void run(){
+                    String msg=null;
+                    try{
+                        ShizukuUtil.cmd("sh","-c","mkdir -p /sdcard/Pictures/Screenshots && screencap -p "+path);
+                        msg="截图已保存: Pictures/Screenshots/"+name;
+                    }catch(Exception e){ msg="截图失败(Shizuku)"; }
+                    final String m=msg;
+                    hd.post(new Runnable(){ public void run(){ toast(m); Log.i("FloatBall","shot "+m); }});
+                }},"shot-shizuku").start();
+                toast("正在截图…");
+                return;
+            }
+        }catch(Exception e){}
+        try{
+            Intent a=new Intent(this,MainActivity.class);
+            a.setAction("com.helper.urlfeeder.action.SCREENSHOT");
+            a.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+            startActivity(a);
+            Log.i("FloatBall","shot -> ask permission");
+        }catch(Exception e){ toast("无法发起截图"); }
+    }
     // 清理后台: 只结束系统允许杀的后台/缓存进程, 不依赖 Shizuku
     void clearBackground(){
         final Context c=this;

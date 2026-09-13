@@ -498,8 +498,8 @@ public class MainActivity extends Activity {
     LinearLayout checkBody;
     LinearLayout floatOrderList;
     Btn[] sizeBtns;   // 悬浮球大小选项按钮(供局部高亮, 不整页重建)
-    String[] FO_ID={"home","app","sweep","net"};                 // 返回/最近已移除
-    String[] FO_NAME={"● 主页","🧰 打开主界面","🧹 清理后台","🔓 开网"};
+    String[] FO_ID={"home","app","sweep","shot","net"};          // 返回/最近已移除
+    String[] FO_NAME={"● 主页","🧰 打开主界面","🧹 清理后台","📸 截图","🔓 开网"};
     void openCheck(){ try{ com.helper.urlfeeder.FloatBallService.collapseMenu(); }catch(Exception e){} if(checkPage==null) buildCheck(); try{ checkPage.bringToFront(); }catch(Exception e){} checkPage.setVisibility(View.VISIBLE); refreshCheck(); }
     void closeCheck(){ if(checkPage!=null) checkPage.setVisibility(View.GONE); }
     void buildCheck(){
@@ -805,6 +805,19 @@ public class MainActivity extends Activity {
         super.onActivityResult(req,res,data);
         if(req==88){ toast(res==RESULT_OK?"已设为默认浏览器 ✓ 后续无需再确认":"未设为默认（下次可再试）"); }
         if(req==89){ toast(res==RESULT_OK?"已设为默认桌面 ✓ 按 HOME 键生效":"未设为桌面（下次可再试）"); }
+        if(req==REQ_SHOT){
+            if(res==RESULT_OK&&data!=null){
+                try{
+                    Intent s=new Intent(this,ShotService.class);
+                    s.putExtra("code",res);
+                    s.putExtra("data",data);
+                    if(Build.VERSION.SDK_INT>=26) startForegroundService(s); else startService(s);
+                    toast("正在截图…"); addLog("截图已触发");
+                }catch(Exception e){ toast("截图服务启动失败: "+e.getClass().getSimpleName()); }
+            }else{
+                toast("已取消截图");
+            }
+        }
     }
     boolean isDefaultHome(){
         if(Build.VERSION.SDK_INT>=29){
@@ -1434,8 +1447,22 @@ public class MainActivity extends Activity {
             if("com.helper.urlfeeder.action.MANAGE_FLOAT_APP".equals(i.getAction())){
                 final int ix=i.getIntExtra("idx",-1);
                 content.post(new Runnable(){ public void run(){ manageFloatApp(ix); } });
+                return;
+            }
+            if("com.helper.urlfeeder.action.SCREENSHOT".equals(i.getAction())){
+                content.post(new Runnable(){ public void run(){ requestShot(); } });
             }
         }catch(Exception e){}
+    }
+    // 请求录屏授权并启动截图服务
+    static final int REQ_SHOT=90;
+    void requestShot(){
+        try{
+            android.media.projection.MediaProjectionManager mpm=
+                (android.media.projection.MediaProjectionManager)getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+            if(mpm==null){ toast("此设备不支持截图"); return; }
+            startActivityForResult(mpm.createScreenCaptureIntent(),REQ_SHOT);
+        }catch(Exception e){ toast("无法发起截图: "+e.getClass().getSimpleName()); }
     }
     void manageFloatApp(final int idx){
         try{
