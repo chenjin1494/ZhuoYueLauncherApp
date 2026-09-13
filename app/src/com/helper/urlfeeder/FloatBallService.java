@@ -433,12 +433,13 @@ public class FloatBallService extends Service {
         int dq=discSize(); int cx=dq/2, cy=dq/2;
         int[] ring=ringFor(n); int itemD=ring[0], R=ring[1];
         decorateDisc(menu,n,itemD,R);   // 盘心光环+扇区分隔线(美化分层)
+        int tw=labelBoxW(itemD,R,n), th=(int)(itemD*1.2f);
         for(int i=0;i<n;i++){
             double a=Math.toRadians(-90.0+360.0*i/n);   // 从顶部开始顺时针
-            int px=cx+(int)Math.round(R*Math.cos(a))-itemD/2;
-            int py=cy+(int)Math.round(R*Math.sin(a))-itemD/2;
+            int px=cx+(int)Math.round(R*Math.cos(a))-tw/2;
+            int py=cy+(int)Math.round(R*Math.sin(a))-th/2;
             View t=wheelTile(labs.get(i),acts.get(i),itemD,false);
-            FrameLayout.LayoutParams flp=new FrameLayout.LayoutParams(itemD,itemD);
+            FrameLayout.LayoutParams flp=new FrameLayout.LayoutParams(tw,th);
             flp.leftMargin=px; flp.topMargin=py;
             menu.addView(t,flp);
         }
@@ -452,6 +453,13 @@ public class FloatBallService extends Service {
         for(int i=0;i<arr.length;i++) arr[i]=acts.get(i);
         addDiscTouch(menu,n,itemD,R,new Runnable(){public void run(){ hideMenu(); }},arr,null);
         Log.i("FloatBall","wheel rendered n="+n);
+    }
+    // 名称容器宽度: 字号放大后避免被小方块裁剪, 同时不与相邻项重叠
+    int labelBoxW(int itemD,int R,int n){
+        int arc=(int)(2*Math.PI*R/Math.max(1,n));
+        int w=(int)(itemD*1.9f);
+        int lim=(int)(arc*0.95f);
+        return Math.max(itemD,Math.min(w,lim));
     }
     // 圆盘分层装饰: 盘心光环 + 项内侧圆环 + 扇区分隔线 → 视觉上"中间圆 + 周围区域"
     void decorateDisc(final FrameLayout host,int n,int itemD,int R){
@@ -537,7 +545,7 @@ public class FloatBallService extends Service {
             nv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,d*(center?0.19f:0.22f));  // 名称同步放大
             nv.setGravity(Gravity.CENTER);
             nv.setMaxLines(1); nv.setIncludeFontPadding(false);
-            nv.setMaxWidth((int)(d*(center?1.0f:1.3f)));
+            nv.setMaxWidth((int)(d*(center?1.0f:1.9f)));
             nv.setEllipsize(android.text.TextUtils.TruncateAt.END);
             Fonts.apply(nv);
             if(!center) nv.setShadowLayer(Math.max(2,dp(2)),0,Math.max(1,dp(1)),0xCC000000);
@@ -735,13 +743,14 @@ public class FloatBallService extends Service {
             // 应用真实图标围成一圈
             final Runnable[] acts=new Runnable[n];
             final Runnable[] longActs=new Runnable[n];
+            int tw2=labelBoxW(itemD,R,n), th2=(int)(itemD*1.3f);
             for(int i=0;i<n;i++){
                 final String[] a=apps.get(i);
                 double ang=Math.toRadians(-90.0+360.0*i/n);
-                int px=cx+(int)Math.round(R*Math.cos(ang))-itemD/2;
-                int py=cy+(int)Math.round(R*Math.sin(ang))-itemD/2;
+                int px=cx+(int)Math.round(R*Math.cos(ang))-tw2/2;
+                int py=cy+(int)Math.round(R*Math.sin(ang))-th2/2;
                 View t=appTile(a,i,itemD);
-                FrameLayout.LayoutParams flp=new FrameLayout.LayoutParams(itemD,itemD);
+                FrameLayout.LayoutParams flp=new FrameLayout.LayoutParams(tw2,th2);
                 flp.leftMargin=px; flp.topMargin=py;
                 sub.addView(t,flp);
                 final int ix=i;
@@ -829,7 +838,7 @@ public class FloatBallService extends Service {
         nv.setText(a[0]); nv.setTextColor(0xFFEDF3FF);
         nv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,d*0.22f);
         nv.setGravity(Gravity.CENTER);
-        nv.setMaxLines(1); nv.setMaxWidth((int)(d*1.3f));
+        nv.setMaxLines(1); nv.setMaxWidth((int)(d*1.9f));
         nv.setEllipsize(android.text.TextUtils.TruncateAt.END);
         nv.setIncludeFontPadding(false);
         Fonts.apply(nv);
