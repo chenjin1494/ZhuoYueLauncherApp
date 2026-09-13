@@ -144,12 +144,12 @@ public class ShotService extends Service {
         }},"shot-worker").start();
     }
 
-    // 保存到相册(Android 10+ 用 MediaStore, 旧版写文件后通知扫描)
-    String save(Bitmap bmp){
+    // 保存到相册(供本服务与无障碍截图共用)
+    static String saveBitmap(Context ctx,Bitmap bmp){
         String name="WFT_"+new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date())+".png";
         try{
             if(Build.VERSION.SDK_INT>=29){
-                ContentResolver cr=getContentResolver();
+                ContentResolver cr=ctx.getContentResolver();
                 ContentValues v=new ContentValues();
                 v.put(MediaStore.Images.Media.DISPLAY_NAME,name);
                 v.put(MediaStore.Images.Media.MIME_TYPE,"image/png");
@@ -167,11 +167,12 @@ public class ShotService extends Service {
                 FileOutputStream fo=new FileOutputStream(f);
                 bmp.compress(Bitmap.CompressFormat.PNG,100,fo);
                 fo.flush(); fo.close();
-                android.media.MediaScannerConnection.scanFile(this,new String[]{f.getAbsolutePath()},new String[]{"image/png"},null);
+                android.media.MediaScannerConnection.scanFile(ctx,new String[]{f.getAbsolutePath()},new String[]{"image/png"},null);
                 return f.getAbsolutePath();
             }
         }catch(Exception e){ Log.e("Shot","save err",e); return null; }
     }
+    String save(Bitmap bmp){ return saveBitmap(this,bmp); }
 
     void startForegroundSafely(){
         try{

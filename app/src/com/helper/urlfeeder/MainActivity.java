@@ -436,6 +436,7 @@ public class MainActivity extends Activity {
         settingsBody.addView(st);
         settingsBody.addView(gap(6));
         settingsBody.addView(secOpt("🔑 授权 Shizuku（首次/重装后）",new Runnable(){public void run(){ShizukuUtil.requestPerm();}}));
+        settingsBody.addView(secOpt(ShotAccessibilityService.ready()?"♿ 无障碍截图：已开启 ✓（点此可关闭）":"♿ 开启无障碍截图（免 Shizuku/免授权框）",new Runnable(){public void run(){openAccessibilitySettings();}}));
         settingsBody.addView(secOpt("🔀 切到 Lawnchair 桌面（停用卓越）",new Runnable(){public void run(){szToLawnchair();}}));
         settingsBody.addView(secOpt("↩️ 恢复卓越Launcher 桌面",new Runnable(){public void run(){szRestoreZy();}}));
         settingsBody.addView(secOpt("📊 查询桌面状态",new Runnable(){public void run(){szStatus();}}));
@@ -984,6 +985,15 @@ public class MainActivity extends Activity {
             prefs.edit().putBoolean("float_on",true).commit();
             toast("悬浮球已启动（开机也会自动开启）"); addLog("悬浮球导航已启动");
         }catch(Exception e){ toast("启动失败:"+e.getMessage()); }
+    }
+    // 打开系统无障碍设置(用于开启/关闭截图辅助)
+    void openAccessibilitySettings(){
+        try{
+            toast(ShotAccessibilityService.ready()?"可在列表里关闭「万能转发器·截图辅助」":"请在列表里开启「万能转发器·截图辅助」");
+            Intent i=new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        }catch(Exception e){ toast("无法打开无障碍设置"); }
     }
     void stopFloatBall(){
         try{ Intent s=new Intent(this,FloatBallService.class); stopService(s); prefs.edit().putBoolean("float_on",false).commit(); toast("悬浮球已停止"); addLog("悬浮球已停止"); }catch(Exception e){}

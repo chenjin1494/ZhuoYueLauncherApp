@@ -9,4 +9,6 @@
         <item name="android:backgroundDimEnabled">false</item>
         <item name="android:windowContentOverlay">@null</item>
     </style>
+    <string name="shot_access_desc">万能转发器截图辅助（开启后悬浮球可一键截图，无需录屏授权）</string>
+    <string name="shot_access_label">万能转发器·截图辅助</string>
 </resources>

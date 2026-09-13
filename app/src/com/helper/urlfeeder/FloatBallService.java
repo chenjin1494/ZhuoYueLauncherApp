@@ -627,6 +627,13 @@ public class FloatBallService extends Service {
 
     // 截图: Shizuku 可用则静默 screencap; 否则交给主界面走 MediaProjection 授权
     void captureScreen(){
+        // 1) 无障碍截图(免授权框/免 Shizuku/无系统过场)
+        try{
+            if(ShotAccessibilityService.ready()){
+                if(ShotAccessibilityService.capture(this)){ toast("正在截图…"); return; }
+            }
+        }catch(Exception e){}
+        // 2) Shizuku 静默 screencap
         try{
             if(ShizukuUtil.running()&&ShizukuUtil.permission()==0){
                 final String name="WFT_"+new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date())+".png";
