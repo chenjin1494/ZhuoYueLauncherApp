@@ -91,6 +91,7 @@ public class FloatBallService extends Service {
     void createBall(){
         wm=(WindowManager)getSystemService(WINDOW_SERVICE);
         w=wm.getDefaultDisplay().getWidth(); h=wm.getDefaultDisplay().getHeight();
+        refreshScreen();
 
         ballSz=dp(prefBallSize());
         ball=new LinearLayout(this);
@@ -173,7 +174,7 @@ public class FloatBallService extends Service {
             scrim=new LinearLayout(this);
             scrim.setBackgroundColor(0x00000000);
             scrimLp=new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.MATCH_PARENT,
+                w,h,
                 Build.VERSION.SDK_INT>=26?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
@@ -201,11 +202,40 @@ public class FloatBallService extends Service {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                 |WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT);
-        menuLp.gravity=Gravity.CENTER;
+        menuLp.gravity=Gravity.TOP|Gravity.START;
+        menuLp.x=discCenterX(dq); menuLp.y=discCenterY(dq);
         Log.i("FloatBall","createBall disc="+dq+" items="+menu.getChildCount());
         try{ wm.addView(menu,menuLp); Log.i("FloatBall","wheel added"); }catch(Exception e){ Log.e("FloatBall","add wheel fail",e);}
     }
 
+    // 重新读取当前方向下的屏幕尺寸(旋转后必须刷新, 否则球/轮盘会跑到屏幕外)
+    void refreshScreen(){
+        try{
+            android.util.DisplayMetrics dm=new android.util.DisplayMetrics();
+            wm.getDefaultDisplay().getRealMetrics(dm);
+            if(dm.widthPixels>0) w=dm.widthPixels;
+            if(dm.heightPixels>0) h=dm.heightPixels;
+        }catch(Exception e){}
+    }
+    public void onConfigurationChanged(android.content.res.Configuration c){
+        super.onConfigurationChanged(c);
+        try{
+            refreshScreen();
+            if(ball!=null){
+                clampBallOnScreen();
+                wm.updateViewLayout(ball,ballLp);
+                Log.i("FloatBall","rotation -> w="+w+" h="+h+" ball x="+ballLp.x+" y="+ballLp.y);
+            }
+        }catch(Exception e){}
+    }
+    // 轮盘居中(用与悬浮球相同的布局坐标空间: 该空间从状态栏下沿开始)
+    int discCenterX(int dq){ return Math.max(0,(w-dq)/2); }
+    int discCenterY(int dq){
+        int inset=topInsetNow();
+        int visH=h-inset;
+        if(visH<dq+dp(8)) visH=h;
+        return Math.max(0,(visH-dq)/2);
+    }
     // 轮盘直径(px)
     int discSize(){ return dp(330); }
 
@@ -617,7 +647,7 @@ public class FloatBallService extends Service {
         try{
             // 用透明 Activity 申请授权(不拉起主界面); 已授权则直接复用, 全程静默
             Intent a=new Intent(this,ShotActivity.class);
-            a.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+            a.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS|Intent.FLAG_ACTIVITY_NO_ANIMATION);
             startActivity(a);
             Log.i("FloatBall","shot -> "+(ShotService.hasProjection()?"reuse":"ask permission"));
         }catch(Exception e){ toast("无法发起截图"); }
@@ -644,9 +674,16 @@ public class FloatBallService extends Service {
     void showMenu(boolean show){
         if(menu==null) return;
         if(show){
+            refreshScreen();
+            try{ clampBallOnScreen(); wm.updateViewLayout(ball,ballLp); }catch(Exception e){}
             try{ menu.animate().cancel(); }catch(Exception e){}   // 取消可能残留的收起动画
             try{ menu.clearAnimation(); }catch(Exception e){}
             menu.setVisibility(View.VISIBLE);
+            try{
+                int dq2=discSize();
+                menuLp.x=discCenterX(dq2); menuLp.y=discCenterY(dq2);
+                wm.updateViewLayout(menu,menuLp);
+            }catch(Exception e){}
             menu.setAlpha(0f); menu.setScaleX(0.55f); menu.setScaleY(0.55f);
             menu.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(200)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
@@ -756,7 +793,8 @@ public class FloatBallService extends Service {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                     |WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL|WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
                 PixelFormat.TRANSLUCENT);
-            subLp.gravity=Gravity.CENTER;
+            subLp.gravity=Gravity.TOP|Gravity.START;
+            subLp.x=discCenterX(discSize()); subLp.y=discCenterY(discSize());
             try{ wm.addView(sub,subLp); Log.i("FloatBall","apps sub disc added"); }catch(Exception e){ Log.e("FloatBall","add sub fail",e);}
         }catch(Exception e){ Log.e("FloatBall","createSub err",e); }
     }
@@ -821,6 +859,11 @@ public class FloatBallService extends Service {
             try{ sub.animate().cancel(); }catch(Exception e){}   // 取消残留收起动画
             try{ sub.clearAnimation(); }catch(Exception e){}
             sub.setAlpha(0f); sub.setScaleX(0.5f); sub.setScaleY(0.5f);
+            try{
+                int dq3=discSize();
+                subLp.x=discCenterX(dq3); subLp.y=discCenterY(dq3);
+                wm.updateViewLayout(sub,subLp);
+            }catch(Exception e){}
             sub.setVisibility(View.VISIBLE);
             sub.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(230)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f))

@@ -18,11 +18,16 @@ public class ShotActivity extends Activity {
     protected void onCreate(Bundle b){
         super.onCreate(b);
         try{
-            if(ShotService.hasProjection()){ startCapture(); return; }   // 已有授权 → 静默复用
+            // 关掉本页的窗口/转场动画(否则透明页会以黑条形式滑入滑出)
+            try{ getWindow().setWindowAnimations(0); }catch(Exception e){}
+            if(ShotService.hasProjection()){ startCapture(); return; }
             android.media.projection.MediaProjectionManager mpm=
                 (android.media.projection.MediaProjectionManager)getSystemService(Context.MEDIA_PROJECTION_SERVICE);
             if(mpm==null){ toast("此设备不支持截图"); finish(); return; }
-            startActivityForResult(mpm.createScreenCaptureIntent(),REQ);
+            Intent ci=mpm.createScreenCaptureIntent();
+            ci.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
+            startActivityForResult(ci,REQ);
+            overridePendingTransition(0,0);
         }catch(Exception e){ toast("无法发起截图: "+e.getClass().getSimpleName()); finish(); }
     }
 
@@ -40,6 +45,7 @@ public class ShotActivity extends Activity {
         }else{
             toast("已取消截图");
         }
+        overridePendingTransition(0,0);
         finish();
     }
 
@@ -51,6 +57,10 @@ public class ShotActivity extends Activity {
             toast("正在截图…");
         }catch(Exception e){ toast("截图失败"); }
         finish();
+    }
+    public void finish(){
+        super.finish();
+        overridePendingTransition(0,0);   // 关闭退出动画
     }
     void toast(String m){ try{ Toast.makeText(this,m,Toast.LENGTH_SHORT).show(); }catch(Exception e){} }
 }

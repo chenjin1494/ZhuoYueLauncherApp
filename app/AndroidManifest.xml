@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.helper.urlfeeder"
-    android:versionCode="86" android:versionName="5.79">
+    android:versionCode="90" android:versionName="5.83">
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.SET_WALLPAPER"/>
@@ -25,7 +25,7 @@
                   android:multiprocess="false" android:enabled="true" android:exported="true"
                   android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/>
         <activity android:name=".ShotActivity" android:exported="false"
-                  android:theme="@android:style/Theme.Translucent.NoTitleBar"
+                  android:theme="@style/ShotTheme"
                   android:excludeFromRecents="true" android:noHistory="true"
                   android:taskAffinity=""/>
         <activity android:name=".MainActivity" android:exported="true"

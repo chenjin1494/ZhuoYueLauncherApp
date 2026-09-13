@@ -71,11 +71,18 @@ echo "d8 ..."
   $(find "$CLS" -name '*.class') "$LIBS_OUT"/*.jar
 
 # ---------- 资源/manifest 链接 ----------
+echo "aapt2 compile res ..."
+mkdir -p build
+if [[ -d "$APP_DIR/res" ]]; then
+  "$BT/aapt2" compile --dir "$APP_DIR/res" -o build/res.zip
+fi
+
 echo "aapt2 link ..."
 "$BT/aapt2" link -o build/base.apk -I "$JAR" \
   --manifest "$APP_DIR/AndroidManifest.xml" \
   -A "$APP_DIR/assets" \
-  --min-sdk-version 24 --target-sdk-version 34
+  --min-sdk-version 24 --target-sdk-version 34 \
+  build/res.zip
 python3 - <<'PY'
 import zipfile, shutil
 shutil.copy('build/base.apk','build/unsigned.apk')
