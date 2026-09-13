@@ -433,7 +433,7 @@ public class FloatBallService extends Service {
         int dq=discSize(); int cx=dq/2, cy=dq/2;
         int[] ring=ringFor(n); int itemD=ring[0], R=ring[1];
         decorateDisc(menu,n,itemD,R);   // 盘心光环+扇区分隔线(美化分层)
-        int tw=labelBoxW(itemD,R,n), th=(int)(itemD*1.05f);
+        int tw=labelBoxW(itemD,R,n), th=(int)(itemD*1.5f);
         int bias=dp(12);                                  // 内容沿半径外移, 避免压到盘心圆
         for(int i=0;i<n;i++){
             double a=Math.toRadians(-90.0+360.0*i/n);   // 从顶部开始顺时针
@@ -536,6 +536,7 @@ public class FloatBallService extends Service {
         tv.setTextColor(center?0xFF1A1A1A:0xFFFFFFFF);
         tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,d*(center?0.36f:0.48f));   // 图标按直径比例放大
         tv.setGravity(Gravity.CENTER);
+        tv.setIncludeFontPadding(false);
         Fonts.apply(tv);
         if(!center) tv.setShadowLayer(Math.max(2,dp(2)),0,Math.max(1,dp(1)),0xCC000000);
         t.addView(tv);
@@ -744,7 +745,7 @@ public class FloatBallService extends Service {
             // 应用真实图标围成一圈
             final Runnable[] acts=new Runnable[n];
             final Runnable[] longActs=new Runnable[n];
-            int tw2=labelBoxW(itemD,R,n), th2=(int)(itemD*1.12f);
+            int tw2=labelBoxW(itemD,R,n), th2=(int)(itemD*1.7f);
             int bias2=dp(12);
             for(int i=0;i<n;i++){
                 final String[] a=apps.get(i);
