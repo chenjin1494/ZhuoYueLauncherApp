@@ -194,8 +194,8 @@ public class MainActivity extends Activity {
 
         LinearLayout header=new LinearLayout(this); header.setOrientation(LinearLayout.VERTICAL);
         header.setPadding(dp(18),dp(14),dp(18),dp(14)); header.setBackground(glass());
-        TextView h1=new TextView(this); h1.setText("🌐 万能转发器"); h1.setTextColor(Color.WHITE); h1.setTextSize(21); h1.setTypeface(null,Typeface.BOLD);
-        TextView h2=new TextView(this); h2.setText("网页转发 · 全应用抽屉 · 一键开网"); h2.setTextColor(0xDDFFFFFF); h2.setTextSize(11);
+        TextView h1=new TextView(this); h1.setText("🌐 万能转发器"); h1.setTextColor(Color.WHITE); h1.setTextSize(21); h1.setTypeface(Fonts.nerd(this),Typeface.BOLD);
+        TextView h2=new TextView(this); h2.setText("网页转发 · 全应用抽屉 · 一键开网"); h2.setTextColor(0xDDFFFFFF); h2.setTextSize(11); Fonts.apply(h2);
         header.addView(h1); header.addView(h2);
         LinearLayout hwrap=new LinearLayout(this); hwrap.setOrientation(LinearLayout.VERTICAL);
         hwrap.setPadding(dp(14),dp(10),dp(14),dp(6));
@@ -348,7 +348,7 @@ public class MainActivity extends Activity {
     GradientDrawable shp(int r,int c){ GradientDrawable g=new GradientDrawable(); g.setCornerRadius(dp(r)); g.setColor(c); return g; }
     GradientDrawable grad(int r,int[] cs){ GradientDrawable g=new GradientDrawable(GradientDrawable.Orientation.TL_BR,cs); g.setCornerRadius(dp(r)); g.setStroke(dp(1),0x66FFFFFF); return g; }
 
-    Btn gbtn(String t,Drawable bg,View.OnClickListener l){ Btn b=new Btn(this); b.setText(t); b.setTextColor(Color.WHITE); b.setTextSize(15); b.setAllCaps(false);
+    Btn gbtn(String t,Drawable bg,View.OnClickListener l){ Btn b=new Btn(this); b.setText(t); b.setTextColor(Color.WHITE); b.setTextSize(15); b.setAllCaps(false); Fonts.apply(b);
         b.setBackground(bg); b.setPadding(dp(12),dp(13),dp(12),dp(13)); b.setOnClickListener(l);
         liquidFx(b);
         return b; }
@@ -471,9 +471,9 @@ public class MainActivity extends Activity {
         TextView tip=new TextView(this); tip.setText("想了解版本、开发者与功能？点顶部「📄 关于本应用」"); tip.setTextSize(12); tip.setTextColor(0xBBFFFFFF); tip.setPadding(dp(8),dp(4),dp(8),dp(6));
         settingsBody.addView(tip);
     }
-    TextView secTitle(String s){ TextView t=new TextView(this); t.setText(s); t.setTextSize(13); t.setTextColor(0xCCFFFFFF); t.setPadding(dp(4),dp(6),dp(4),dp(4)); return t; }
+    TextView secTitle(String s){ TextView t=new TextView(this); t.setText(s); t.setTextSize(13); t.setTextColor(0xCCFFFFFF); Fonts.apply(t); t.setPadding(dp(4),dp(6),dp(4),dp(4)); return t; }
     Btn secOpt(String label,final Runnable act){ Btn b=new Btn(this); b.setText(label); b.setTextColor(Color.WHITE); b.setTextSize(14); b.setAllCaps(false);
-        b.setGravity(Gravity.LEFT|Gravity.CENTER_VERTICAL); b.setPadding(dp(14),dp(12),dp(14),dp(12)); b.setBackground(glass());
+        b.setGravity(Gravity.LEFT|Gravity.CENTER_VERTICAL); b.setPadding(dp(14),dp(12),dp(14),dp(12)); b.setBackground(glass()); Fonts.apply(b);
         b.setOnClickListener(new View.OnClickListener(){public void onClick(View v){act.run();}});
         liquidFx(b);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.bottomMargin=dp(6); b.setLayoutParams(lp); return b; }
@@ -485,8 +485,8 @@ public class MainActivity extends Activity {
     LinearLayout checkBody;
     LinearLayout floatOrderList;
     Btn[] sizeBtns;   // 悬浮球大小选项按钮(供局部高亮, 不整页重建)
-    String[] FO_ID={"back","home","app","recent","sweep","net"};
-    String[] FO_NAME={"◀ 返回","● 主页","🧰 打开主界面","▦ 最近","🧹 清理后台","🔓 开网"};
+    String[] FO_ID={"home","app","sweep","net"};                 // 返回/最近已移除
+    String[] FO_NAME={"● 主页","🧰 打开主界面","🧹 清理后台","🔓 开网"};
     void openCheck(){ try{ com.helper.urlfeeder.FloatBallService.collapseMenu(); }catch(Exception e){} if(checkPage==null) buildCheck(); try{ checkPage.bringToFront(); }catch(Exception e){} checkPage.setVisibility(View.VISIBLE); refreshCheck(); }
     void closeCheck(){ if(checkPage!=null) checkPage.setVisibility(View.GONE); }
     void buildCheck(){
@@ -992,6 +992,7 @@ public class MainActivity extends Activity {
             String[] arr=saved.split(",");
             for(String x:arr){ if(x!=null&&x.trim().length()>0) ord.add(x.trim()); }
         }
+        ord.remove("back"); ord.remove("recent");    // 清掉历史残留
         for(String id:FO_ID){ if(!ord.contains(id)) ord.add(id); }
         return ord;
     }

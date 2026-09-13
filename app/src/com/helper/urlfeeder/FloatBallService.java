@@ -280,7 +280,7 @@ public class FloatBallService extends Service {
 
     // ---------------- 轮盘渲染 ----------------
     // 可排序菜单项 id → 标签/动作 (注意: 不能以 c 开头, c 前缀留给自定义应用 c0..cN)
-    String[] ORDER_ID={"back","home","app","recent","sweep","net"};
+    String[] ORDER_ID={"home","app","sweep","net"};   // 返回/最近已移除
     void buildMenu(){
         String saved=null;
         try{ saved=getSharedPreferences("pf",0).getString("float_order",null); }catch(Exception e){}
@@ -296,6 +296,7 @@ public class FloatBallService extends Service {
         java.util.List<String[]> customs=customList();
         for(String id:ord){
             if("close".equals(id)) continue;      // 关闭改到盘心
+            if("back".equals(id)||"recent".equals(id)) continue;   // 已移除的功能项(清旧prefs)
             if(id.startsWith("c")) continue;      // 自定义项 → 二级菜单
             String lb=labelOf(id);
             if(lb==null) continue;
@@ -526,6 +527,7 @@ public class FloatBallService extends Service {
         tv.setTextColor(center?0xFF1A1A1A:0xFFFFFFFF);
         tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,d*(center?0.36f:0.48f));   // 图标按直径比例放大
         tv.setGravity(Gravity.CENTER);
+        Fonts.apply(tv);
         if(!center) tv.setShadowLayer(Math.max(2,dp(2)),0,Math.max(1,dp(1)),0xCC000000);
         t.addView(tv);
         if(p[1]!=null&&p[1].length()>0){
@@ -537,6 +539,7 @@ public class FloatBallService extends Service {
             nv.setMaxLines(1); nv.setIncludeFontPadding(false);
             nv.setMaxWidth((int)(d*(center?1.0f:1.3f)));
             nv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            Fonts.apply(nv);
             if(!center) nv.setShadowLayer(Math.max(2,dp(2)),0,Math.max(1,dp(1)),0xCC000000);
             t.addView(nv);
         }
@@ -829,6 +832,7 @@ public class FloatBallService extends Service {
         nv.setMaxLines(1); nv.setMaxWidth((int)(d*1.3f));
         nv.setEllipsize(android.text.TextUtils.TruncateAt.END);
         nv.setIncludeFontPadding(false);
+        Fonts.apply(nv);
         nv.setShadowLayer(Math.max(2,dp(2)),0,Math.max(1,dp(1)),0xCC000000);
         t.addView(nv);
         t.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ hideSubNow(); launchApp(a[1]); } });

@@ -74,6 +74,7 @@ echo "d8 ..."
 echo "aapt2 link ..."
 "$BT/aapt2" link -o build/base.apk -I "$JAR" \
   --manifest "$APP_DIR/AndroidManifest.xml" \
+  -A "$APP_DIR/assets" \
   --min-sdk-version 24 --target-sdk-version 34
 python3 - <<'PY'
 import zipfile, shutil
