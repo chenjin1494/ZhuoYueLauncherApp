@@ -338,6 +338,91 @@ public class FloatBallService extends Service {
         if(rr+dd/2>dq/2-dp(6)) rr=dq/2-dd/2-dp(6);
         return new int[]{dd,rr};
     }
+    // ---- 极坐标命中层: 外圈按扇区可点(整块), 中心圆整块可点 ----
+    void addDiscTouch(FrameLayout host,int n,int itemD,int R,final Runnable centerAct,final Runnable[] acts,final Runnable[] longActs){
+        try{
+            int dq=discSize();
+            int innerEdge=R-itemD/2;
+            DiscTouchView tv=new DiscTouchView(this);
+            tv.n=n;
+            tv.hubR=Math.max(dp(10),innerEdge-dp(2));
+            tv.outerR=dq/2-dp(4);
+            tv.centerAct=centerAct;
+            tv.acts=acts;
+            tv.longActs=longActs;
+            host.addView(tv,new FrameLayout.LayoutParams(dq,dq));
+        }catch(Exception e){ Log.e("FloatBall","addDiscTouch err",e); }
+    }
+    class DiscTouchView extends View {
+        int n=0,hubR=0,outerR=0;
+        Runnable centerAct;
+        Runnable[] acts,longActs;
+        float dx0,dy0;
+        boolean moved,longDone;
+        Runnable pendingLong;
+        DiscTouchView(Context c){ super(c); }
+        void cancelLong(){ if(pendingLong!=null){ removeCallbacks(pendingLong); pendingLong=null; } }
+        int sectorOf(float x,float y){
+            int dq=getWidth(); if(dq<=0) dq=discSize();
+            float cx=dq/2f, cy=dq/2f;
+            float ddx=x-cx, ddy=y-cy;
+            double r=Math.sqrt(ddx*ddx+ddy*ddy);
+            if(r<=hubR) return -1;                 // 中心圆
+            if(r>outerR) return -2;                // 盘外(方角)
+            if(n<=0||acts==null) return -2;
+            double deg=Math.toDegrees(Math.atan2(ddy,ddx));   // 0=+x
+            double a=deg+90.0; if(a<0) a+=360.0;              // 0=正上方, 顺时针
+            int idx=(int)Math.round(a/(360.0/n))%n;
+            if(idx<0) idx+=n;
+            return idx;
+        }
+        public boolean onTouchEvent(MotionEvent e){
+            float x=e.getX(), y=e.getY();
+            int idx=sectorOf(x,y);
+            switch(e.getActionMasked()){
+                case MotionEvent.ACTION_DOWN:
+                    dx0=x; dy0=y; moved=false; longDone=false;
+                    if(idx>=0&&longActs!=null&&idx<longActs.length&&longActs[idx]!=null){
+                        final int fi=idx;
+                        pendingLong=new Runnable(){ public void run(){
+                            longDone=true;
+                            try{ longActs[fi].run(); }catch(Exception ex){}
+                        }};
+                        postDelayed(pendingLong,480);
+                    }
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if(Math.hypot(x-dx0,y-dy0)>dp(14)){ moved=true; cancelLong(); }
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    cancelLong();
+                    if(!moved&&!longDone){
+                        if(idx==-1){ if(centerAct!=null) centerAct.run(); }        // 中间圆整块=✕/返回
+                        else if(idx==-2){ hideMenu(); }                            // 盘外方角=收起
+                        else if(acts!=null&&idx<acts.length&&acts[idx]!=null) acts[idx].run();
+                    }
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    cancelLong();
+                    return true;
+            }
+            return true;
+        }
+    }
+
+    // 悬浮球应用盘长按 → 交给主界面管理(改名/移除)
+    void openManageApp(int idx){
+        hideMenu();
+        try{
+            Intent mg=new Intent(FloatBallService.this,MainActivity.class);
+            mg.setAction("com.helper.urlfeeder.action.MANAGE_FLOAT_APP");
+            mg.putExtra("idx",idx);
+            mg.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+            startActivity(mg);
+            Log.i("FloatBall","manage app idx="+idx);
+        }catch(Exception e){ Log.e("FloatBall","manage fail",e); }
+    }
+
     // 把各功能项摆到一圈上, 盘心放 ✕ 收起
     void renderWheel(final java.util.List<String> labs, final java.util.List<Runnable> acts){
         if(menu==null) return;
@@ -356,11 +441,15 @@ public class FloatBallService extends Service {
             flp.leftMargin=px; flp.topMargin=py;
             menu.addView(t,flp);
         }
-        int cd=dp(68);
+        int cd=dp(84);
         View cc=wheelTile("✕ 收起",new Runnable(){public void run(){ hideMenu(); }},cd,true);
         FrameLayout.LayoutParams clp=new FrameLayout.LayoutParams(cd,cd);
         clp.leftMargin=cx-cd/2; clp.topMargin=cy-cd/2;
         menu.addView(cc,clp);
+        // 外圈整块可点(按扇区) + 中间圆整块可点
+        Runnable[] arr=new Runnable[acts.size()];
+        for(int i=0;i<arr.length;i++) arr[i]=acts.get(i);
+        addDiscTouch(menu,n,itemD,R,new Runnable(){public void run(){ hideMenu(); }},arr,null);
         Log.i("FloatBall","wheel rendered n="+n);
     }
     // 圆盘分层装饰: 盘心光环 + 项内侧圆环 + 扇区分隔线 → 视觉上"中间圆 + 周围区域"
@@ -630,6 +719,8 @@ public class FloatBallService extends Service {
             int[] ring=ringFor(n); int itemD=ring[0], R=ring[1];
             decorateDisc(sub,n,itemD,R);   // 与主轮盘同款分层美化
             // 应用真实图标围成一圈
+            final Runnable[] acts=new Runnable[n];
+            final Runnable[] longActs=new Runnable[n];
             for(int i=0;i<n;i++){
                 final String[] a=apps.get(i);
                 double ang=Math.toRadians(-90.0+360.0*i/n);
@@ -639,13 +730,18 @@ public class FloatBallService extends Service {
                 FrameLayout.LayoutParams flp=new FrameLayout.LayoutParams(itemD,itemD);
                 flp.leftMargin=px; flp.topMargin=py;
                 sub.addView(t,flp);
+                final int ix=i;
+                acts[i]=new Runnable(){ public void run(){ hideSubNow(); launchApp(a[1]); } };
+                longActs[i]=new Runnable(){ public void run(){ openManageApp(ix); } };
             }
-            // 盘心: ‹ 返回主轮盘
-            int cd=dp(68);
+            // 盘心: ‹ 返回主轮盘 (整块中间圆可点)
+            int cd=dp(84);
             View back=wheelTile("‹ 返回",new Runnable(){ public void run(){ backToWheel(); } },cd,true);
             FrameLayout.LayoutParams blp2=new FrameLayout.LayoutParams(cd,cd);
             blp2.leftMargin=cx-cd/2; blp2.topMargin=cy-cd/2;
             sub.addView(back,blp2);
+            // 外圈整块可点(按扇区) + 扇区长按=改名/移除 + 中间圆整块=返回
+            addDiscTouch(sub,n,itemD,R,new Runnable(){ public void run(){ backToWheel(); } },acts,longActs);
             Log.i("FloatBall","apps sub disc n="+apps.size());
             // 下钻动画: 主轮盘缩小淡出 → 二级圆盘放大淡入
             if(transitioning){ Log.i("FloatBall","transition busy"); return; }
