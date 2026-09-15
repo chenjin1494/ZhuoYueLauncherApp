@@ -487,13 +487,6 @@ public class FloatBallService extends Service {
         public boolean onTouchEvent(MotionEvent e){
             float x=e.getX(), y=e.getY();
             int idx=sectorOf(x,y);
-            if(e.getActionMasked()==MotionEvent.ACTION_DOWN){
-                int[] loc=new int[2];
-                try{ getLocationOnScreen(loc); }catch(Exception ex){}
-                Log.i("FloatBall","disc touch down x="+(int)x+" y="+(int)y+" idx="+idx
-                    +" view="+getWidth()+"x"+getHeight()+" onScreen="+loc[0]+","+loc[1]
-                    +" raw="+(int)e.getRawX()+","+(int)e.getRawY()+" hubR="+hubR+" outerR="+outerR+" n="+n);
-            }
             switch(e.getActionMasked()){
                 case MotionEvent.ACTION_DOWN:
                     dx0=x; dy0=y; moved=false; longDone=false;

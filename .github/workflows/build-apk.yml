@@ -63,7 +63,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Publish / update "latest" release (success)
-        if: steps.build.outcome == 'success'
+        if: always() && steps.build.outcome == 'success'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
@@ -75,7 +75,7 @@ jobs:
           make_latest: true
 
       - name: Report failure (prerelease, 不影响 /releases/latest)
-        if: steps.build.outcome != 'success'
+        if: always() && steps.build.outcome != 'success'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-status
@@ -84,5 +84,5 @@ jobs:
           prerelease: true
 
       - name: Fail the job if the build failed
-        if: steps.build.outcome != 'success'
+        if: always() && steps.build.outcome != 'success'
         run: exit 1

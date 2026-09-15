@@ -25,11 +25,21 @@ import java.net.URL;
  */
 public class Updater {
 
-    /** 固定下载地址：仓库 latest Release 的 ASCII 资源名（中文文件名不便 URL 引用，故 CI 另存一份） */
-    public static final String APK_URL =
-        "https://github.com/chenjin1494/ZhuoYueLauncherApp/releases/latest/download/urlfeeder-latest.apk";
+    /**
+     * 下载地址(按顺序尝试)：
+     *  ① 仓库 dist/ 目录里的最新 APK(raw 直链, 不依赖 CI/Release, 公开免登录)
+     *  ② GitHub latest Release 的资源(CI 成功时会更新)
+     */
+    public static final String[] APK_URLS = {
+        "https://raw.githubusercontent.com/chenjin1494/ZhuoYueLauncherApp/main/dist/urlfeeder-latest.apk",
+        "https://github.com/chenjin1494/ZhuoYueLauncherApp/releases/latest/download/urlfeeder-latest.apk"
+    };
+    public static final String APK_URL = APK_URLS[0];
     public static final String AUTHORITY = "com.helper.urlfeeder.apk";
     public static final String FILE_NAME = "urlfeeder-update.apk";
+
+    /** 进度/结果回调(主界面用它写运行日志, 便于排查网络被拦等) */
+    public interface Cb { void log(String msg); }
 
     public static int myVersionCode(Activity a) {
         try { return a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionCode; }
@@ -70,24 +80,35 @@ public class Updater {
         }
     }
 
-    /** 检查更新：后台下载 → 比对版本 → 主线程弹窗询问是否安装 */
-    public static void checkAndPrompt(final Activity act) {
+    /** 检查更新：后台按顺序尝试下载地址 → 比对版本 → 主线程弹窗询问是否安装 */
+    public static void checkAndPrompt(final Activity act) { checkAndPrompt(act, null); }
+    public static void checkAndPrompt(final Activity act, final Cb cb) {
         Toast.makeText(act, "正在检查更新…", Toast.LENGTH_SHORT).show();
         new Thread(new Runnable() { public void run() {
             final File tmp = new File(act.getCacheDir(), FILE_NAME + ".tmp");
             final File dst = new File(act.getCacheDir(), FILE_NAME);
             String err = null;
-            try { err = httpGet(APK_URL, tmp); } catch (Throwable t) { err = "网络错误: " + t; }
-            if (err == null) {
+            boolean got = false;
+            for (int i = 0; i < APK_URLS.length && !got; i++) {
+                try { err = httpGet(APK_URLS[i], tmp); } catch (Throwable t) { err = "网络错误: " + t; }
+                if (err == null) {
+                    got = true;
+                    if (cb != null) cb.log("检查更新: 下载成功(" + host(APK_URLS[i]) + ")");
+                } else if (cb != null) {
+                    cb.log("检查更新: " + host(APK_URLS[i]) + " 失败 → " + err);
+                }
+            }
+            if (got) {
                 try {
                     PackageInfo pi = act.getPackageManager().getPackageArchiveInfo(tmp.getAbsolutePath(), 0);
                     if (pi == null) {
-                        err = "下载内容不是有效 APK（Release 资源可能未就绪）";
+                        err = "下载内容不是有效 APK（资源可能未就绪）";
                     } else {
                         final int nv = pi.versionCode;
                         final String nvn = pi.versionName;
                         final int mv = myVersionCode(act);
                         final String mvn = myVersionName(act);
+                        if (cb != null) cb.log("检查更新: 远端 v" + nvn + "(" + nv + ") 本机 v" + mvn + "(" + mv + ")");
                         if (nv <= mv) {
                             err = "已是最新版本 v" + mvn;
                         } else {
@@ -104,10 +125,14 @@ public class Updater {
             }
             try { tmp.delete(); } catch (Exception e) {}
             final String m = err == null ? "检查失败" : err;
+            if (cb != null) cb.log("检查更新结果: " + m);
             act.runOnUiThread(new Runnable() { public void run() {
                 Toast.makeText(act, m, Toast.LENGTH_LONG).show();
             }});
         }}).start();
+    }
+    static String host(String url) {
+        try { return new URL(url).getHost(); } catch (Throwable t) { return url; }
     }
 
     static void promptInstall(final Activity act, final File apk, final String nvn, final String mvn) {

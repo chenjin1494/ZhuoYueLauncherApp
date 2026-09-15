@@ -499,7 +499,11 @@ public class MainActivity extends Activity {
         settingsBody.addView(bkV);
         settingsBody.addView(secOpt("💾 备份设置到「下载/万能转发器备份」",new Runnable(){public void run(){backupSettings();}}));
         settingsBody.addView(secOpt("📥 从备份文件恢复设置",new Runnable(){public void run(){restoreSettings();}}));
-        settingsBody.addView(secOpt("⬆️ 检查更新（GitHub 下载并安装）",new Runnable(){public void run(){Updater.checkAndPrompt(MainActivity.this);}}));
+        settingsBody.addView(secOpt("⬆️ 检查更新（GitHub 下载并安装）",new Runnable(){public void run(){
+            Updater.checkAndPrompt(MainActivity.this,new Updater.Cb(){ public void log(final String m){
+                runOnUiThread(new Runnable(){ public void run(){ addLog(m); }});
+            }});
+        }}));
         settingsBody.addView(gap(6));
         settingsBody.addView(secTitle("⚡ 默认应用 / 工具"));
         settingsBody.addView(secOpt("🌐 设为默认浏览器（守护会保持，需授权一次）",new Runnable(){public void run(){fixDefaultBrowser();}}));
