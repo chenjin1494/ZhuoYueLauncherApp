@@ -92,13 +92,33 @@ public class GuardService extends Service {
                 startService(fb);
             }
         }catch(Exception e){}
+        // 若开启过"拦截卓越上报", 一并恢复 VPN 黑洞(授权已持久化)
+        try{
+            if(prefs.getBoolean("vpn_block_zy",false) && !BlockVpnService.running){
+                startService(new Intent(this,BlockVpnService.class));
+            }
+        }catch(Exception e){}
         return START_STICKY;
     }
 
+    long lastZyKill=0;
+    // 持续抑制: 定期强停卓越Launcher(需 Shizuku), 使其监控/上报服务无法常驻
+    void suppressZy(){
+        try{
+            long now=System.currentTimeMillis();
+            if(now-lastZyKill<15000) return;
+            lastZyKill=now;
+            if(!prefs.getBoolean("suppress_zy",false)) return;
+            if(!ShizukuUtil.running()||ShizukuUtil.permission()!=0) return;
+            ShizukuUtil.cmd("am","force-stop","com.zy.ai.launcher");
+            android.util.Log.i("Guard","suppressed com.zy.ai.launcher");
+        }catch(Exception e){}
+    }
     void tick(){
         if(!alive) return;
         final long t0=System.currentTimeMillis();
         new Thread(new Runnable(){ public void run(){
+            suppressZy();
             boolean ok=probe("www.bilibili.com",443)||probe("www.qq.com",443);
             h.post(new Runnable(){ public void run(){
                 if(!alive) return;

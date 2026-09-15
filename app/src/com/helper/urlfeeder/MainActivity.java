@@ -440,6 +440,12 @@ public class MainActivity extends Activity {
         settingsBody.addView(secOpt("🔀 切到 Lawnchair 桌面（停用卓越）",new Runnable(){public void run(){szToLawnchair();}}));
         settingsBody.addView(secOpt("↩️ 恢复卓越Launcher 桌面",new Runnable(){public void run(){szRestoreZy();}}));
         settingsBody.addView(secOpt("📊 查询桌面状态",new Runnable(){public void run(){szStatus();}}));
+        boolean vpnOn=prefs.getBoolean("vpn_block_zy",false);
+        boolean supOn=prefs.getBoolean("suppress_zy",false);
+        settingsBody.addView(secOpt(vpnOn?"🛡 拦截卓越云端上报：已开启 ✓（点此关闭）":"🛡 拦截卓越云端上报（VPN 黑洞·保留桌面）",
+            new Runnable(){public void run(){toggleBlockVpn();}}));
+        settingsBody.addView(secOpt(supOn?"🛑 持续抑制卓越监控：已开启 ✓（需 Lawnchair 桌面）":"🛑 持续抑制卓越监控（强停其监控服务·需 Shizuku）",
+            new Runnable(){public void run(){toggleSuppressZy();}}));
         settingsBody.addView(gap(6));
         boolean fbok=android.provider.Settings.canDrawOverlays(this);
         settingsBody.addView(secTitle("🪄 悬浮球导航（返回/主页/最近/开网）"));
@@ -806,6 +812,10 @@ public class MainActivity extends Activity {
         super.onActivityResult(req,res,data);
         if(req==88){ toast(res==RESULT_OK?"已设为默认浏览器 ✓ 后续无需再确认":"未设为默认（下次可再试）"); }
         if(req==89){ toast(res==RESULT_OK?"已设为默认桌面 ✓ 按 HOME 键生效":"未设为桌面（下次可再试）"); }
+        if(req==REQ_VPN){
+            if(res==RESULT_OK) startBlockVpn();
+            else toast("未授予 VPN 权限，拦截未开启");
+        }
         if(req==REQ_SHOT){
             if(res==RESULT_OK&&data!=null){
                 try{
@@ -985,6 +995,43 @@ public class MainActivity extends Activity {
             prefs.edit().putBoolean("float_on",true).commit();
             toast("悬浮球已启动（开机也会自动开启）"); addLog("悬浮球导航已启动");
         }catch(Exception e){ toast("启动失败:"+e.getMessage()); }
+    }
+    // ---- 卓越Launcher 云端监控治理 ----
+    static final int REQ_VPN=91;
+    void toggleBlockVpn(){
+        boolean on=prefs.getBoolean("vpn_block_zy",false);
+        try{
+            if(on){
+                prefs.edit().putBoolean("vpn_block_zy",false).commit();
+                Intent st=new Intent(this,BlockVpnService.class); st.setAction("stop"); startService(st);
+                toast("已关闭卓越网络拦截"); addLog("关闭卓越上报拦截");
+                buildSettings();
+                return;
+            }
+            Intent p=android.net.VpnService.prepare(this);
+            if(p!=null){ startActivityForResult(p,REQ_VPN); return; }
+            startBlockVpn();
+        }catch(Exception e){ toast("操作失败: "+e.getClass().getSimpleName()); }
+    }
+    void startBlockVpn(){
+        prefs.edit().putBoolean("vpn_block_zy",true).commit();
+        try{ startService(new Intent(this,BlockVpnService.class)); }catch(Exception e){}
+        toast("已开启：卓越的上报流量将被黑洞拦截（其它应用不受影响）");
+        addLog("开启卓越上报拦截(VPN黑洞)");
+        buildSettings();
+    }
+    void toggleSuppressZy(){
+        boolean on=prefs.getBoolean("suppress_zy",false);
+        prefs.edit().putBoolean("suppress_zy",!on).commit();
+        if(!on){
+            toast("已开启：将定期强停卓越监控（需要 Shizuku，且建议桌面为 Lawnchair）");
+            addLog("开启卓越监控持续抑制");
+            try{ startGuard(); }catch(Exception e){}
+        }else{
+            toast("已关闭卓越监控持续抑制");
+            addLog("关闭卓越监控持续抑制");
+        }
+        buildSettings();
     }
     // 打开系统无障碍设置(用于开启/关闭截图辅助)
     void openAccessibilitySettings(){

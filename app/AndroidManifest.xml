@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.helper.urlfeeder"
-    android:versionCode="93" android:versionName="5.86">
+    android:versionCode="94" android:versionName="5.87">
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.SET_WALLPAPER"/>
@@ -54,6 +54,12 @@
         <service android:name=".FloatBallService" android:exported="false"/>
         <service android:name=".GuardService" android:exported="false"/>
         <service android:name=".ShotService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
+        <service android:name=".BlockVpnService" android:exported="false"
+                 android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService"/>
+            </intent-filter>
+        </service>
         <service android:name=".ShotAccessibilityService" android:exported="true"
                  android:label="@string/shot_access_label"
                  android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
