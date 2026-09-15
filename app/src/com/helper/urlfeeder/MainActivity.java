@@ -442,7 +442,7 @@ public class MainActivity extends Activity {
         settingsBody.addView(secOpt("📊 查询桌面状态",new Runnable(){public void run(){szStatus();}}));
         boolean vpnOn=prefs.getBoolean("vpn_block_zy",false);
         boolean supOn=prefs.getBoolean("suppress_zy",false);
-        settingsBody.addView(secOpt(vpnOn?"🛡 拦截卓越云端上报：已开启 ✓（点此关闭）":"🛡 拦截卓越云端上报（VPN 黑洞·保留桌面）",
+        settingsBody.addView(secOpt(vpnOn?"🛡 拦截卓越上报域名：已开启 ✓（点此关闭）":"🛡 拦截卓越上报域名（只拦上报/追踪，保留其它云端功能）",
             new Runnable(){public void run(){toggleBlockVpn();}}));
         settingsBody.addView(secOpt(supOn?"🛑 持续抑制卓越监控：已开启 ✓（需 Lawnchair 桌面）":"🛑 持续抑制卓越监控（强停其监控服务·需 Shizuku）",
             new Runnable(){public void run(){toggleSuppressZy();}}));
