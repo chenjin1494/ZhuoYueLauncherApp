@@ -93,4 +93,37 @@ public class ShizukuUtil {
         System.arraycopy(args, 0, full, 1, args.length);
         return run(full);
     }
+    /** 通过 sh -c 执行一段脚本(支持管道/变量), 例如 "settings put system screen_brightness 120" */
+    public static String sh(String script) {
+        return run(new String[]{"sh", "-c", script});
+    }
+    /** 是否可用(已运行且已授权) */
+    public static boolean ready() {
+        return running() && permission() == 0;
+    }
+    /** 按键事件 */
+    public static String key(int code) {
+        return run(new String[]{"input", "keyevent", String.valueOf(code)});
+    }
+    /** 读系统亮度, 失败返回 -1 */
+    public static int brightnessGet() {
+        try {
+            String cur = sh("settings get system screen_brightness");
+            if (cur == null) return -1;
+            cur = cur.replace("[exit=0]", "").trim();
+            return Integer.parseInt(cur.trim());
+        } catch (Throwable t) { return -1; }
+    }
+    /** 调节系统亮度: 读当前值 → 加减 → 限制到 [5,255] → 写回。返回写入后的亮度, 失败 -1 */
+    public static int brightnessStep(int delta) {
+        try {
+            int v = brightnessGet();
+            if (v < 0) v = 128;
+            int nv = v + delta;
+            if (nv < 5) nv = 5;
+            if (nv > 255) nv = 255;
+            sh("settings put system screen_brightness " + nv);
+            return nv;
+        } catch (Throwable t) { return -1; }
+    }
 }

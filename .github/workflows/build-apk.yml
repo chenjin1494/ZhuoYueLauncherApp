@@ -11,6 +11,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # 需要写权限来创建/更新 latest Release(供 App 内自更新下载)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,14 +36,35 @@ jobs:
           chmod +x build.sh
           ./build.sh 万能转发器-ci.apk
 
+      - name: Prepare ASCII asset name
+        run: cp 万能转发器-ci.apk urlfeeder-latest.apk
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: urlfeeder-apk
-          path: 万能转发器-ci.apk
+          path: |
+            万能转发器-ci.apk
+            urlfeeder-latest.apk
+
+      # 固定 tag=latest 的 Release: App 内「检查更新」按固定 URL 下载
+      #   https://github.com/chenjin1494/ZhuoYueLauncherApp/releases/latest/download/urlfeeder-latest.apk
+      - name: Publish / update "latest" release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: 最新构建 (latest)
+          body: |
+            自动构建，供 App 内「💾 备份/恢复/更新 → ⬆️ 检查更新」直接下载安装。
+            签名与本地构建一致，可覆盖安装且保留设置。
+          files: urlfeeder-latest.apk
+          make_latest: true
 
       - name: Attach APK to GitHub Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: 万能转发器-ci.apk
+          files: |
+            万能转发器-ci.apk
+            urlfeeder-latest.apk

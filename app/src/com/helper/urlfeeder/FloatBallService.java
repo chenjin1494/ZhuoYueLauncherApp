@@ -38,6 +38,9 @@ public class FloatBallService extends Service {
     private TextView ballTv=null;  // 球面图标
     private long lastBallDown=0;   // 最近一次按住悬浮球的时刻(用于忽略点球瞬间的"外部收起")
     private long lastHide=0;       // 最近一次收起菜单的时刻(抑制外部收起与点球同一手势的重开)
+    private Runnable longPressShot=null; // 悬浮球长按=截图
+    private static final int LONG_PRESS_MS=520;
+    private int subMode=0;         // 二级圆盘内容: 0=我的应用, 1=快捷动作
     private boolean subVisible=false;     // 二级"应用"菜单是否显示
     private boolean transitioning=false;  // 一二级切换动画进行中(防止重复触发)
     private FrameLayout sub=null;     // 二级"应用"圆盘窗口
@@ -129,7 +132,7 @@ public class FloatBallService extends Service {
         styleBall();   // 渐变外观 + 字号
         ball.setOnTouchListener(new View.OnTouchListener(){
             float dx,dy,downX,downY;
-            boolean downMenuVis;
+            boolean downMenuVis,longFired;
             public boolean onTouch(View v,android.view.MotionEvent e){
                 switch(e.getAction()){
                     case MotionEvent.ACTION_DOWN:
@@ -138,13 +141,30 @@ public class FloatBallService extends Service {
                         dx=e.getRawX()-ballLp.x; dy=e.getRawY()-ballLp.y;
                         downX=e.getRawX(); downY=e.getRawY();
                         downMenuVis=menuVisible;   // 按下时记录菜单状态
+                        longFired=false;
+                        // 长按不动 = 截图(无需延迟单击, 不牺牲点按手感)
+                        cancelLongPressShot();
+                        longPressShot=new Runnable(){ public void run(){
+                            longFired=true; longPressShot=null;
+                            try{ if(ball!=null) ball.setAlpha(0.5f); }catch(Exception ex){}
+                            Log.i("FloatBall","ball long-press -> shot");
+                            captureScreen();
+                        }};
+                        ball.postDelayed(longPressShot,LONG_PRESS_MS);
                         return true;
                     case MotionEvent.ACTION_MOVE:
                         ballLp.x=(int)(e.getRawX()-dx); ballLp.y=(int)(e.getRawY()-dy);
                         clampBallOnScreen();
                         try{ wm.updateViewLayout(ball,ballLp); }catch(Exception ex){}
+                        float md=(float)Math.hypot(e.getRawX()-downX,e.getRawY()-downY);
+                        if(md>android.view.ViewConfiguration.get(FloatBallService.this).getScaledTouchSlop()) cancelLongPressShot();
+                        return true;
+                    case MotionEvent.ACTION_CANCEL:
+                        cancelLongPressShot();
                         return true;
                     case MotionEvent.ACTION_UP:
+                        cancelLongPressShot();
+                        if(longFired){ try{ if(ball!=null) ball.setAlpha(1f); }catch(Exception ex){} return true; }
                         // 用位移判断: 没真正拖动=点按(按下时开着→关, 关着→开); 拖动过=吸附到边缘
                         float dist=(float)Math.hypot(e.getRawX()-downX,e.getRawY()-downY);
                         int slop=android.view.ViewConfiguration.get(FloatBallService.this).getScaledTouchSlop();
@@ -384,6 +404,13 @@ public class FloatBallService extends Service {
         if(customs.size()>0){
             labs.add("📱 应用");
             acts.add(new Runnable(){ public void run(){ openAppsSub(); } });
+        }
+        // 快捷动作(音量/静音/亮度/锁屏)统一收进二级"快捷"盘, 不占主环
+        boolean showQuick=true;
+        try{ showQuick=getSharedPreferences("pf",0).getBoolean("float_quick",true); }catch(Exception e){}
+        if(showQuick){
+            labs.add("🎛 快捷");
+            acts.add(new Runnable(){ public void run(){ openQuickSub(); } });
         }
         if(labs.size()>0) renderWheel(labs,acts);
         Log.i("FloatBall","buildMenu wheel items="+labs.size()+" customs="+customs.size()+" order="+ord.toString());
@@ -675,6 +702,12 @@ public class FloatBallService extends Service {
 
     // 截图: Shizuku 可用则静默 screencap; 否则交给主界面走 MediaProjection 授权
     // 截图前临时隐藏悬浮球(避免被抓进画面), 抓完恢复
+    void cancelLongPressShot(){
+        if(longPressShot!=null){
+            try{ if(ball!=null) ball.removeCallbacks(longPressShot); }catch(Exception e){}
+            longPressShot=null;
+        }
+    }
     void hideBallForShot(){
         try{ if(ball!=null) ball.setVisibility(View.GONE); }catch(Exception e){}
         try{ if(scrim!=null) scrim.setVisibility(View.GONE); }catch(Exception e){}
@@ -870,14 +903,44 @@ public class FloatBallService extends Service {
             try{ wm.addView(sub,subLp); Log.i("FloatBall","apps sub disc added"); }catch(Exception e){ Log.e("FloatBall","add sub fail",e);}
         }catch(Exception e){ Log.e("FloatBall","createSub err",e); }
     }
-    void openAppsSub(){
+    void openAppsSub(){ openSub(0); }      // 二级: 我的应用
+    void openQuickSub(){ openSub(1); }     // 二级: 快捷动作
+    // ---------------- 快捷动作(二级盘, 依赖 Shizuku shell 权限) ----------------
+    String[] QUICK_ID={"volup","voldown","mute","brightup","brightdown","lock"};
+    String quickLabel(String id){
+        if("volup".equals(id)) return "🔊 音量+";
+        if("voldown".equals(id)) return "🔉 音量-";
+        if("mute".equals(id)) return "🔇 静音";
+        if("brightup".equals(id)) return "☀ 亮度+";
+        if("brightdown".equals(id)) return "🌥 亮度-";
+        if("lock".equals(id)) return "🔒 锁屏";
+        return id;
+    }
+    Runnable quickAct(final String id){
+        return new Runnable(){ public void run(){
+            if(!ShizukuUtil.ready()){ toast("快捷动作需要 Shizuku：设置 → Shizuku 引导（复制启动命令）"); return; }
+            new Thread(new Runnable(){ public void run(){
+                try{
+                    if("volup".equals(id)) ShizukuUtil.key(24);            // VOLUME_UP
+                    else if("voldown".equals(id)) ShizukuUtil.key(25);     // VOLUME_DOWN
+                    else if("mute".equals(id)) ShizukuUtil.key(164);       // VOLUME_MUTE
+                    else if("lock".equals(id)) ShizukuUtil.key(26);        // POWER
+                    else if("brightup".equals(id)) ShizukuUtil.brightnessStep(28);
+                    else if("brightdown".equals(id)) ShizukuUtil.brightnessStep(-28);
+                    Log.i("FloatBall","quick act "+id+" done");
+                }catch(Throwable t){ Log.e("FloatBall","quick act "+id+" err",t); }
+            }}).start();
+        }};
+    }
+    void openSub(final int mode){
         try{
             if(sub==null) createAppsSubWindow();
             if(sub==null) return;
-            final java.util.List<String[]> apps=customList();
-            if(apps.size()==0){ toast("还没有添加应用：设置 → 悬浮球菜单排序 → ＋ 添加要打开的应用"); return; }
+            final java.util.List<String[]> apps=(mode==0)?customList():new java.util.ArrayList<String[]>();
+            if(mode==0&&apps.size()==0){ toast("还没有添加应用：设置 → 悬浮球菜单排序 → ＋ 添加要打开的应用"); return; }
+            subMode=mode;
             sub.removeAllViews();
-            int n=apps.size();
+            int n=(mode==0)?apps.size():QUICK_ID.length;
             int dq=discSize(); int cx=dq/2, cy=dq/2;
             int[] ring=ringFor(n); int itemD=ring[0], R=ring[1];
             decorateDisc(sub,n,itemD,R);   // 与主轮盘同款分层美化
@@ -887,17 +950,24 @@ public class FloatBallService extends Service {
             int tw2=labelBoxW(itemD,R,n), th2=(int)(itemD*1.7f);
             int bias2=dp(12);
             for(int i=0;i<n;i++){
-                final String[] a=apps.get(i);
                 double ang=Math.toRadians(-90.0+360.0*i/n);
                 int px=cx+(int)Math.round((R+bias2)*Math.cos(ang))-tw2/2;
                 int py=cy+(int)Math.round((R+bias2)*Math.sin(ang))-th2/2;
-                View t=appTile(a,i,itemD);
+                final int ix=i;
+                View t;
+                if(mode==0){
+                    final String[] a=apps.get(i);
+                    t=appTile(a,i,itemD);
+                    acts[i]=new Runnable(){ public void run(){ hideSubNow(); launchApp(a[1]); } };
+                    longActs[i]=new Runnable(){ public void run(){ openManageApp(ix); } };
+                }else{
+                    final String qid=QUICK_ID[i];
+                    t=wheelTile(quickLabel(qid),quickAct(qid),itemD,false);
+                    acts[i]=new Runnable(){ public void run(){ hideSubNow(); quickAct(qid).run(); } };
+                }
                 FrameLayout.LayoutParams flp=new FrameLayout.LayoutParams(tw2,th2);
                 flp.leftMargin=px; flp.topMargin=py;
                 sub.addView(t,flp);
-                final int ix=i;
-                acts[i]=new Runnable(){ public void run(){ hideSubNow(); launchApp(a[1]); } };
-                longActs[i]=new Runnable(){ public void run(){ openManageApp(ix); } };
             }
             // 盘心: ‹ 返回主轮盘 (整块中间圆可点)
             int cd=dp(74);
@@ -907,7 +977,7 @@ public class FloatBallService extends Service {
             sub.addView(back,blp2);
             // 外圈整块可点(按扇区) + 扇区长按=改名/移除 + 中间圆整块=返回
             addDiscTouch(sub,n,itemD,R,new Runnable(){ public void run(){ backToWheel(); } },acts,longActs);
-            Log.i("FloatBall","apps sub disc n="+apps.size());
+            Log.i("FloatBall","sub disc mode="+mode+" n="+n);
             // 下钻动画: 主轮盘缩小淡出 → 二级圆盘放大淡入
             if(transitioning){ Log.i("FloatBall","transition busy"); return; }
             transitioning=true;
@@ -1143,6 +1213,7 @@ public class FloatBallService extends Service {
     }
     public void onDestroy(){
         running=false;
+        cancelLongPressShot();
         try{ if(dmgr!=null&&dlistener!=null) dmgr.unregisterDisplayListener(dlistener); }catch(Exception e){}
         dmgr=null; dlistener=null;
         // 关键: 停止服务时把所有悬浮窗从 WindowManager 摘掉,

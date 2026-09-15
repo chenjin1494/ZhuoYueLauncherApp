@@ -22,8 +22,11 @@ public class GuardService extends Service {
     static final String FW_ACTION="cn.com.microtrust.firewall.IAFWService";
     static final String CH="guard_ch";
     static final int NID=1001;
+    static final int NID_SZ=1002;          // Shizuku 掉线/恢复提醒(单独一条, 与守护常驻通知并存)
     static final long CHECK_FAST=3500L;   // blocked state: retry fast
     static final long CHECK_SLOW=20000L;  // healthy state: light polling
+    int szState=-1;                       // -1=未知(基线未建立) 0=未运行 1=运行中
+    long lastSzNotify=0;
 
     SharedPreferences prefs;
     NotificationManager nm;
@@ -127,6 +130,7 @@ public class GuardService extends Service {
             boolean ok=probe("www.bilibili.com",443)||probe("www.qq.com",443);
             h.post(new Runnable(){ public void run(){
                 if(!alive) return;
+                checkShizukuState();
                 if(ok){
                     boolean def=isDefaultBrowser();
                     if(def) notif("网络正常 · 守护中","白名单外可连 ✓  ·  默认浏览器=转发器 ✓");
@@ -189,6 +193,39 @@ public class GuardService extends Service {
               .setOngoing(true).setOnlyAlertOnce(true).setContentIntent(mainPi());
             if(Build.VERSION.SDK_INT<26) nb.setPriority(Notification.PRIORITY_LOW);
             if(nm!=null) nm.notify(NID,nb.build());
+        }catch(Exception e){}
+    }
+
+    // ---------- Shizuku 保活提醒 ----------
+    // 掉线/恢复都只提醒一次; 服务刚启动时只建立基线, 不打扰
+    void checkShizukuState(){
+        try{
+            boolean up=ShizukuUtil.running();
+            if(szState<0){ szState=up?1:0; android.util.Log.i("Guard","shizuku baseline="+szState); return; }
+            if(szState==1&&!up){
+                szState=0;
+                if(System.currentTimeMillis()-lastSzNotify>60000){
+                    lastSzNotify=System.currentTimeMillis();
+                    notifSz("⚠ Shizuku 已掉线（需重新启动）",
+                        "快捷动作/桌面管理/静默截图暂不可用 · 点此查看启动命令");
+                    android.util.Log.i("Guard","shizuku down notified");
+                }
+            }else if(szState==0&&up){
+                szState=1;
+                boolean auth=ShizukuUtil.permission()==0;
+                notifSz("✓ Shizuku 已恢复",auth?"已授权，功能可正常使用":"已运行但未授权 → 点此在 App 内点「授权 Shizuku」");
+                android.util.Log.i("Guard","shizuku up notified auth="+auth);
+            }
+        }catch(Exception e){}
+    }
+    void notifSz(String t,String d){
+        try{
+            Notification.Builder nb=Build.VERSION.SDK_INT>=26?new Notification.Builder(this,CH):new Notification.Builder(this);
+            nb.setSmallIcon(android.R.drawable.stat_notify_sync)
+              .setContentTitle(t).setContentText(d)
+              .setAutoCancel(true).setOnlyAlertOnce(false).setContentIntent(mainPi());
+            if(Build.VERSION.SDK_INT<26) nb.setPriority(Notification.PRIORITY_DEFAULT);
+            if(nm!=null) nm.notify(NID_SZ,nb.build());
         }catch(Exception e){}
     }
 

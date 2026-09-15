@@ -91,13 +91,21 @@ with zipfile.ZipFile('build/unsigned.apk','a') as z:
 PY
 
 # ---------- 对齐 + 签名 ----------
+# 固定签名密钥(keystore/urlfeeder.jks, 已入库):
+#   · 本地 adb install -r / App 内自更新都能覆盖已装版本, 设置不丢
+#   · 若密钥不存在(例如 fresh clone 丢了文件)才临时生成, 但那会导致签名不一致
 echo "zipalign + apksigner ..."
 "$BT/zipalign" -p -f 4 build/unsigned.apk build/aligned.apk
-if [[ ! -f build/release.keystore ]]; then
+KS_SRC="keystore/urlfeeder.jks"
+if [[ -f "$KS_SRC" ]]; then
+  KS="$KS_SRC"; ALIAS="k"
+else
+  echo "WARN: 未找到 $KS_SRC, 临时生成签名密钥(签名将不稳定)"
+  KS=build/release.keystore; ALIAS="app"
   keytool -genkeypair -keystore build/release.keystore -alias app -storepass android \
     -keypass android -dname "CN=urlfeeder" -keyalg RSA -keysize 2048 -validity 10000
 fi
-"$BT/apksigner" sign --ks build/release.keystore --ks-pass pass:android \
+"$BT/apksigner" sign --ks "$KS" --ks-key-alias "$ALIAS" --ks-pass pass:android \
   --key-pass pass:android --out "$OUT" build/aligned.apk
 echo "OK -> $OUT"
 ls -la "$OUT"

@@ -436,6 +436,9 @@ public class MainActivity extends Activity {
         settingsBody.addView(st);
         settingsBody.addView(gap(6));
         settingsBody.addView(secOpt("🔑 授权 Shizuku（首次/重装后）",new Runnable(){public void run(){ShizukuUtil.requestPerm();}}));
+        settingsBody.addView(secOpt("📋 复制 Shizuku 启动命令（adb 用）",new Runnable(){public void run(){copyShizukuCmd();}}));
+        settingsBody.addView(secOpt("📶 打开 Shizuku（无线调试 / 启动引导）",new Runnable(){public void run(){openShizukuApp();}}));
+        settingsBody.addView(secOpt("♻️ 检测并重连 Shizuku（现在检查一次）",new Runnable(){public void run(){checkShizukuNow();}}));
         settingsBody.addView(secOpt(ShotAccessibilityService.ready()?"♿ 无障碍截图：已开启 ✓（点此可关闭）":"♿ 开启无障碍截图（免 Shizuku/免授权框）",new Runnable(){public void run(){openAccessibilitySettings();}}));
         settingsBody.addView(secOpt("🔀 切到 Lawnchair 桌面（停用卓越）",new Runnable(){public void run(){szToLawnchair();}}));
         settingsBody.addView(secOpt("↩️ 恢复卓越Launcher 桌面",new Runnable(){public void run(){szRestoreZy();}}));
@@ -482,10 +485,21 @@ public class MainActivity extends Activity {
         refreshSizeButtons(effSz);   // 只更新按钮外观, 不整页重建(不跳滚动)
         settingsBody.addView(gap(4));
         settingsBody.addView(secTitle("📝 悬浮球菜单排序（▲上移 ▼下移，即时生效）"));
+        boolean quickOn=prefs.getBoolean("float_quick",true);
+        settingsBody.addView(secOpt(quickOn?"🎛 快捷动作盘：已开启 ✓（点此隐藏）":"🎛 快捷动作盘：已隐藏（点此显示：音量/静音/亮度/锁屏）",
+            new Runnable(){public void run(){ toggleQuickDisc(); }}));
         settingsBody.addView(secOpt("➕ 添加要打开的应用",new Runnable(){public void run(){ pickCustomApp(); }}));
         floatOrderList=new LinearLayout(this); floatOrderList.setOrientation(LinearLayout.VERTICAL);
         settingsBody.addView(floatOrderList);
         refreshFloatOrder();
+        settingsBody.addView(gap(6));
+        settingsBody.addView(secTitle("💾 备份 / 恢复 / 更新"));
+        TextView bkV=new TextView(this); bkV.setText("当前版本 v"+Updater.myVersionName(this)+"（升级/重装不会丢设置：先备份，装完再恢复）");
+        bkV.setTextColor(0xCCFFFFFF); bkV.setTextSize(12); bkV.setBackground(glass()); bkV.setPadding(dp(14),dp(10),dp(14),dp(10));
+        settingsBody.addView(bkV);
+        settingsBody.addView(secOpt("💾 备份设置到「下载/万能转发器备份」",new Runnable(){public void run(){backupSettings();}}));
+        settingsBody.addView(secOpt("📥 从备份文件恢复设置",new Runnable(){public void run(){restoreSettings();}}));
+        settingsBody.addView(secOpt("⬆️ 检查更新（GitHub 下载并安装）",new Runnable(){public void run(){Updater.checkAndPrompt(MainActivity.this);}}));
         settingsBody.addView(gap(6));
         settingsBody.addView(secTitle("⚡ 默认应用 / 工具"));
         settingsBody.addView(secOpt("🌐 设为默认浏览器（守护会保持，需授权一次）",new Runnable(){public void run(){fixDefaultBrowser();}}));
@@ -823,6 +837,9 @@ public class MainActivity extends Activity {
             if(res==RESULT_OK) startBlockVpn();
             else toast("未授予 VPN 权限，拦截未开启");
         }
+        if(req==REQ_RESTORE){
+            if(res==RESULT_OK&&data!=null) applyRestore(data); else toast("未选择备份文件");
+        }
         if(req==REQ_SHOT){
             if(res==RESULT_OK&&data!=null){
                 try{
@@ -870,7 +887,224 @@ public class MainActivity extends Activity {
         catch(Exception e){ try{ startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS)); }catch(Exception e2){ toast("无法打开设置"); } }
     }
 
+    // ---------- 设置备份 / 恢复 ----------
+    static final int REQ_RESTORE=92;
+    void backupSettings(){
+        try{
+            java.util.Map<String,?> all=prefs.getAll();
+            StringBuilder sb=new StringBuilder();
+            sb.append("# 万能转发器 设置备份 v1\n");
+            sb.append("# 版本 ").append(Updater.myVersionName(this)).append("  时间 ").append(new java.util.Date().toString()).append("\n");
+            for(java.util.Map.Entry<String,?> en:all.entrySet()){
+                String k=en.getKey(); Object v=en.getValue();
+                if(v==null) continue;
+                if(v instanceof String) sb.append(k).append("\tS\t").append(((String)v).replace("\n","\\n")).append("\n");
+                else if(v instanceof Integer) sb.append(k).append("\tI\t").append(v).append("\n");
+                else if(v instanceof Boolean) sb.append(k).append("\tB\t").append(v).append("\n");
+                else if(v instanceof Long) sb.append(k).append("\tL\t").append(v).append("\n");
+                else if(v instanceof Float) sb.append(k).append("\tF\t").append(v).append("\n");
+                else if(v instanceof java.util.Set){
+                    StringBuilder j=new StringBuilder();
+                    for(Object o:(java.util.Set<?>)v){ if(j.length()>0) j.append('\u0001'); j.append(String.valueOf(o).replace("\n","\\n")); }
+                    sb.append(k).append("\tSS\t").append(j).append("\n");
+                }
+            }
+            String name="万能转发器设置备份_"+new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date())+".txt";
+            // 双写: ① 共享「下载」目录(用户可见/可拷走) ② App 专属外部目录(设备管控禁用了文件选择器时, 恢复只能靠这里)
+            String where=saveToDownloads(name,sb.toString());
+            String local=saveToAppDir(name,sb.toString());
+            toast("已备份 "+all.size()+" 项设置 ✓\n① "+where+"\n② "+local);
+            addLog("设置已备份("+all.size()+"项): "+where);
+        }catch(Exception e){ toast("备份失败: "+e); }
+    }
+    java.io.File appBackupDir(){
+        java.io.File d=new java.io.File(getExternalFilesDir(null),"backup");
+        if(!d.exists()) d.mkdirs();
+        return d;
+    }
+    String saveToAppDir(String name,String content) throws Exception {
+        java.io.File f=new java.io.File(appBackupDir(),name);
+        java.io.FileOutputStream fo=new java.io.FileOutputStream(f);
+        fo.write(content.getBytes("UTF-8")); fo.flush(); fo.close();
+        return f.getAbsolutePath();
+    }
+    String saveToDownloads(String name,String content) throws Exception {
+        byte[] bytes=content.getBytes("UTF-8");
+        if(Build.VERSION.SDK_INT>=29){
+            android.content.ContentValues cv=new android.content.ContentValues();
+            cv.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME,name);
+            cv.put(android.provider.MediaStore.MediaColumns.MIME_TYPE,"text/plain");
+            cv.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH,"Download/万能转发器备份");
+            android.net.Uri u=getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,cv);
+            if(u==null) throw new Exception("无法在下载目录创建文件");
+            java.io.OutputStream os=getContentResolver().openOutputStream(u);
+            if(os==null) throw new Exception("无法写入");
+            os.write(bytes); os.flush(); os.close();
+            return "下载/万能转发器备份/"+name;
+        }
+        java.io.File d=new java.io.File(getExternalFilesDir(null),"backup"); d.mkdirs();
+        java.io.File f=new java.io.File(d,name);
+        java.io.FileOutputStream fo=new java.io.FileOutputStream(f);
+        fo.write(bytes); fo.flush(); fo.close();
+        return f.getAbsolutePath();
+    }
+    // 设备管控把系统文件选择器(com.android.documentsui)禁用了 → 恢复走 App 内置列表
+    void restoreSettings(){
+        final java.util.List<String[]> found=findBackups();   // {显示名, uri, 说明}
+        if(found.size()==0){
+            toast("没有找到备份文件\n· 先点「💾 备份设置」\n· 备份存放在：下载/万能转发器备份 与 App 专属目录 backup/");
+            return;
+        }
+        String[] labels=new String[found.size()];
+        for(int i=0;i<found.size();i++) labels[i]=found.get(i)[2];
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("选择要恢复的备份（共 "+found.size()+" 个）")
+            .setItems(labels,new android.content.DialogInterface.OnClickListener(){
+                public void onClick(android.content.DialogInterface d,int w){ applyRestoreUri(android.net.Uri.parse(found.get(w)[1])); }
+            })
+            .setNegativeButton("取消",null)
+            .show();
+    }
+    java.util.List<String[]> findBackups(){
+        java.util.List<String[]> out=new java.util.ArrayList<String[]>();
+        java.text.SimpleDateFormat fmt=new java.text.SimpleDateFormat("MM-dd HH:mm");
+        // ① App 专属目录(始终可读)
+        try{
+            java.io.File[] fs=appBackupDir().listFiles();
+            if(fs!=null){
+                java.util.Arrays.sort(fs,new java.util.Comparator<java.io.File>(){
+                    public int compare(java.io.File a,java.io.File b){ return Long.compare(b.lastModified(),a.lastModified()); }});
+                for(java.io.File f:fs){
+                    if(!f.isFile()||!f.getName().endsWith(".txt")) continue;
+                    out.add(new String[]{f.getName(),android.net.Uri.fromFile(f).toString(),
+                        "📱 "+fmt.format(new java.util.Date(f.lastModified()))+"  "+f.getName()});
+                }
+            }
+        }catch(Exception e){}
+        // ② 共享「下载」目录里本 App 创建的备份(MediaStore 只返回自己写入的文件)
+        if(Build.VERSION.SDK_INT>=29){
+            android.database.Cursor c=null;
+            try{
+                android.net.Uri col=android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+                c=getContentResolver().query(col,
+                    new String[]{android.provider.MediaStore.MediaColumns._ID,android.provider.MediaStore.MediaColumns.DISPLAY_NAME,
+                                 android.provider.MediaStore.MediaColumns.DATE_MODIFIED},
+                    android.provider.MediaStore.MediaColumns.RELATIVE_PATH+" LIKE ?",
+                    new String[]{"Download/万能转发器备份%"},
+                    android.provider.MediaStore.MediaColumns.DATE_MODIFIED+" DESC");
+                while(c!=null&&c.moveToNext()){
+                    long id=c.getLong(0); String nm=c.getString(1); long ts=c.getLong(2)*1000L;
+                    if(nm==null||!nm.endsWith(".txt")) continue;
+                    android.net.Uri u=android.content.ContentUris.withAppendedId(col,id);
+                    out.add(new String[]{nm,u.toString(),"💾 "+fmt.format(new java.util.Date(ts))+"  "+nm});
+                }
+            }catch(Exception e){
+            }finally{ try{ if(c!=null) c.close(); }catch(Exception e){} }
+        }
+        return out;
+    }
+    void applyRestore(Intent data){ if(data!=null) applyRestoreUri(data.getData()); }
+    void applyRestoreUri(final android.net.Uri u){
+        if(u==null){ toast("未选择文件"); return; }
+        final String scheme=u.getScheme();
+        toast("正在恢复…");
+        new Thread(new Runnable(){ public void run(){
+            int n=0; String err=null;
+            try{
+                java.io.InputStream in=getContentResolver().openInputStream(u);
+                if(in==null&&"file".equals(scheme)) in=new java.io.FileInputStream(u.getPath());
+                if(in==null) throw new Exception("无法读取该文件（权限或文件已被删除）");
+                java.io.BufferedReader br=new java.io.BufferedReader(new java.io.InputStreamReader(in,"UTF-8"));
+                android.content.SharedPreferences.Editor ed=prefs.edit();
+                String line;
+                while((line=br.readLine())!=null){
+                    if(line.length()==0||line.charAt(0)=='#') continue;
+                    String[] f=line.split("\t",-1);
+                    if(f.length<3) continue;
+                    String k=f[0];
+                    try{
+                        if("S".equals(f[1])) ed.putString(k,f[2].replace("\\n","\n"));
+                        else if("I".equals(f[1])) ed.putInt(k,Integer.parseInt(f[2].trim()));
+                        else if("B".equals(f[1])) ed.putBoolean(k,Boolean.parseBoolean(f[2].trim()));
+                        else if("L".equals(f[1])) ed.putLong(k,Long.parseLong(f[2].trim()));
+                        else if("F".equals(f[1])) ed.putFloat(k,Float.parseFloat(f[2].trim()));
+                        else if("SS".equals(f[1])){
+                            java.util.Set<String> s=new java.util.HashSet<String>();
+                            if(f[2].length()>0) for(String x:f[2].split("\u0001",-1)) s.add(x.replace("\\n","\n"));
+                            ed.putStringSet(k,s);
+                        } else continue;
+                        n++;
+                    }catch(Exception e){}
+                }
+                br.close(); in.close();
+                ed.commit();
+            }catch(Exception e){ err=String.valueOf(e); }
+            final int fn=n; final String fe=err;
+            runOnUiThread(new Runnable(){ public void run(){
+                if(fe!=null){ toast("恢复失败: "+fe); return; }
+                toast("已恢复 "+fn+" 项设置 ✓\n界面已刷新；悬浮球排序/外观即时生效");
+                addLog("设置已恢复: "+fn+" 项");
+                rebuildUi();
+                try{ Intent s=new Intent(MainActivity.this,FloatBallService.class); s.setAction("reload"); startService(s); }catch(Exception e){}
+            }});
+        }}).start();
+    }
+    // 备查: 旧实现用系统文件选择器 ACTION_OPEN_DOCUMENT + INTENT 类型 "*/*",
+    // 但本设备管控已禁用 com.android.documentsui(文件选择器), 会解析不到 Activity,
+    // 故恢复改为上面的 App 内置备份列表(不依赖系统选择器)。
     // ---------- Shizuku 桌面管理 ----------
+    // Shizuku 掉线后重启需要的手工命令(设备重启/Shizuku 被杀后都可用, 无线调试同理)
+    static final String SHIZUKU_START_CMD="adb shell sh /storage/emulated/0/Android/data/moe.shizuku.privileged.api/start.sh";
+    void copyShizukuCmd(){
+        try{
+            android.content.ClipboardManager cm=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("shizuku",SHIZUKU_START_CMD));
+            toast("已复制启动命令：\n"+SHIZUKU_START_CMD+"\n\n① 平板「设置 → 关于 → 连点版本号」开启开发者选项\n② 打开「无线调试」并记下配对码\n③ 在电脑执行上面命令（或用 Shizuku 内置的无线调试启动）");
+        }catch(Exception e){ toast(SHIZUKU_START_CMD); }
+    }
+    void openShizukuApp(){
+        // 优先打开 Shizuku 的启动引导页(无线调试配对), 其次是应用详情页
+        String[][] tryList={
+            {"moe.shizuku.privileged.api","moe.shizuku.privileged.api.StartActivity"},
+            {"moe.shizuku.privileged.api","moe.shizuku.privileged.api.SettingsActivity"},
+            {"moe.shizuku.privileged.api",null}
+        };
+        for(String[] t:tryList){
+            try{
+                Intent i=new Intent(Intent.ACTION_MAIN);
+                i.addCategory(Intent.CATEGORY_LAUNCHER);
+                if(t[1]!=null) i.setClassName(t[0],t[1]);
+                else i.setClassName(t[0],t[0]+".MainActivity");
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                toast("若打不开：请手动启动 Shizuku → 「通过无线调试启动」");
+                return;
+            }catch(Exception e){ }
+        }
+        try{ startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse("market://details?id=moe.shizuku.privileged.api"))); }
+        catch(Exception e2){ toast("未安装 Shizuku：请先安装 Shizuku，再用命令启动\n"+SHIZUKU_START_CMD); }
+    }
+    void checkShizukuNow(){
+        boolean r=ShizukuUtil.running();
+        boolean a=r&&ShizukuUtil.permission()==0;
+        if(!r) toast("Shizuku 未运行\n请执行：\n"+SHIZUKU_START_CMD+"\n或打开 Shizuku 用无线调试启动");
+        else if(!a){ toast("Shizuku 已运行但未授权 → 点「🔑 授权 Shizuku」"); ShizukuUtil.requestPerm(); }
+        else{
+            final String[] r2={null};
+            toast("Shizuku 已运行且已授权 ✓ 正在自检…");
+            new Thread(new Runnable(){ public void run(){
+                final String o=ShizukuUtil.sh("echo ok; id");
+                runOnUiThread(new Runnable(){ public void run(){ toast("Shizuku 连接正常 ✓\n"+o); }});
+            }}).start();
+        }
+    }
+    void toggleQuickDisc(){
+        boolean on=prefs.getBoolean("float_quick",true);
+        prefs.edit().putBoolean("float_quick",!on).apply();
+        toast(!on?"已开启快捷动作盘（悬浮球 → 🎛 快捷）":"已隐藏快捷动作盘");
+        try{ Intent i=new Intent(this,FloatBallService.class); i.setAction("reload"); startService(i); }catch(Exception e){}
+        rebuildUi();
+    }
     void szCheck(final String who){
         if(!ShizukuUtil.running()){ toast("Shizuku 未运行"); return; }
         if(ShizukuUtil.permission()!=0){ toast("请先点「授权 Shizuku」"); return; }
