@@ -453,7 +453,12 @@ public class MainActivity extends Activity {
         settingsBody.addView(secOpt(vpnTxt,new Runnable(){public void run(){toggleBlockVpn();}}));
         settingsBody.addView(secOpt(fwOn?"🔥 防火墙IP规则拦截：已开启 ✓（点此一键复原）":"🔥 防火墙IP规则拦截（不占 VPN·改前先快照，可一键复原）",
             new Runnable(){public void run(){toggleFwBlock();}}));
-        settingsBody.addView(secOpt("🔍 查看管控防火墙规则（只读）",new Runnable(){public void run(){showFwRules();}}));
+        settingsBody.addView(secOpt("🧱 管控防火墙规则管理（增删·快照·恢复）",new Runnable(){public void run(){
+            startActivity(new Intent(MainActivity.this,RulesActivity.class));
+        }}));
+        settingsBody.addView(secOpt("🧾 本地审计日志（筛选·导出·清理）",new Runnable(){public void run(){
+            startActivity(new Intent(MainActivity.this,AuditActivity.class));
+        }}));
         settingsBody.addView(secOpt(supOn?"🛑 持续抑制卓越监控：已开启 ✓（需 Lawnchair 桌面）":"🛑 持续抑制卓越监控（强停其监控服务·需 Shizuku）",
             new Runnable(){public void run(){toggleSuppressZy();}}));
         settingsBody.addView(gap(6));
@@ -693,7 +698,7 @@ public class MainActivity extends Activity {
         info.setBackground(glass()); info.setPadding(dp(14),dp(10),dp(14),dp(10));
         meta(info,"程序版本","v"+vn);
         meta(info,"版本代码",vc);
-        meta(info,"开发者","dctc1494");
+        meta(info,"开发者","chenjin1494");
         meta(info,"包名","com.helper.urlfeeder");
         meta(info,"适用系统","Android 7.0+ (API 24)");
         meta(info,"目标版本","API 34 · Android 13/14");
@@ -708,7 +713,7 @@ public class MainActivity extends Activity {
         desc.addView(d2);
         body.addView(desc);
         body.addView(gap(10));
-        TextView foot=new TextView(this); foot.setText("本工具仅供学习研究，请遵守设备管理方规定合规使用。\n© 2025 dctc1494");
+        TextView foot=new TextView(this); foot.setText("本工具仅供学习研究，请遵守设备管理方规定合规使用。\n© 2025 chenjin1494");
         foot.setTextSize(11); foot.setTextColor(0x99FFFFFF); foot.setGravity(Gravity.CENTER);
         body.addView(foot);
         rootF.addView(aboutPage,new FrameLayout.LayoutParams(-1,-1));
@@ -1067,7 +1072,12 @@ public class MainActivity extends Activity {
         }catch(Exception e){ toast(SHIZUKU_START_CMD); }
     }
     void openShizukuApp(){
-        // 优先打开 Shizuku 的启动引导页(无线调试配对), 其次是应用详情页
+        // 先使用系统解析出的正式启动入口，兼容不同 Shizuku 版本的 Activity 名称。
+        try{
+            Intent launch=getPackageManager().getLaunchIntentForPackage("moe.shizuku.privileged.api");
+            if(launch!=null){ launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(launch); return; }
+        }catch(Exception e){}
+        // 旧版本入口兜底，其次打开应用市场。
         String[][] tryList={
             {"moe.shizuku.privileged.api","moe.shizuku.privileged.api.StartActivity"},
             {"moe.shizuku.privileged.api","moe.shizuku.privileged.api.SettingsActivity"},
@@ -2001,6 +2011,7 @@ public class MainActivity extends Activity {
     }
     void addLog(String m){
         try{
+            AuditLog.record(this,"APP","INFO",m);
             String ts=android.text.format.DateFormat.format("HH:mm:ss",new java.util.Date()).toString();
             String line="["+ts+"] "+m;
             logLines.add(line);

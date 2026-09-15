@@ -103,6 +103,10 @@ public class Updater {
                     PackageInfo pi = act.getPackageManager().getPackageArchiveInfo(tmp.getAbsolutePath(), 0);
                     if (pi == null) {
                         err = "下载内容不是有效 APK（资源可能未就绪）";
+                    } else if (!act.getPackageName().equals(pi.packageName)) {
+                        err = "APK 包名不匹配: " + pi.packageName;
+                    } else if (!sameSigner(act, tmp)) {
+                        err = "APK 签名与当前安装版本不一致";
                     } else {
                         final int nv = pi.versionCode;
                         final String nvn = pi.versionName;
@@ -131,6 +135,31 @@ public class Updater {
             }});
         }}).start();
     }
+    static boolean sameSigner(Activity act, File apk) {
+        try {
+            int flags = Build.VERSION.SDK_INT >= 28
+                ? android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+                : android.content.pm.PackageManager.GET_SIGNATURES;
+            PackageInfo remote = act.getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), flags);
+            PackageInfo local = act.getPackageManager().getPackageInfo(act.getPackageName(), flags);
+            android.content.pm.Signature[] a, b;
+            if (Build.VERSION.SDK_INT >= 28) {
+                a = remote == null || remote.signingInfo == null ? null : remote.signingInfo.getApkContentsSigners();
+                b = local.signingInfo == null ? null : local.signingInfo.getApkContentsSigners();
+            } else {
+                a = remote == null ? null : remote.signatures;
+                b = local.signatures;
+            }
+            if (a == null || b == null || a.length == 0 || a.length != b.length) return false;
+            for (int i = 0; i < a.length; i++) {
+                boolean found = false;
+                for (int j = 0; j < b.length; j++) if (a[i].equals(b[j])) { found = true; break; }
+                if (!found) return false;
+            }
+            return true;
+        } catch (Throwable t) { return false; }
+    }
+
     static String host(String url) {
         try { return new URL(url).getHost(); } catch (Throwable t) { return url; }
     }

@@ -38,8 +38,11 @@ public class FloatBallService extends Service {
     private TextView ballTv=null;  // 球面图标
     private long lastBallDown=0;   // 最近一次按住悬浮球的时刻(用于忽略点球瞬间的"外部收起")
     private long lastHide=0;       // 最近一次收起菜单的时刻(抑制外部收起与点球同一手势的重开)
-    private Runnable longPressShot=null; // 悬浮球长按=截图
+    private Runnable longPressShot=null; // 悬浮球长按回调(清理后台)
+    private Runnable pendingSingleTap=null;
+    private long lastTapUp=0;
     private static final int LONG_PRESS_MS=520;
+    private static final int DOUBLE_TAP_MS=280;
     private int subMode=0;         // 二级圆盘内容: 0=我的应用, 1=快捷动作
     private boolean subVisible=false;     // 二级"应用"菜单是否显示
     private boolean transitioning=false;  // 一二级切换动画进行中(防止重复触发)
@@ -132,7 +135,7 @@ public class FloatBallService extends Service {
         styleBall();   // 渐变外观 + 字号
         ball.setOnTouchListener(new View.OnTouchListener(){
             float dx,dy,downX,downY;
-            boolean downMenuVis,longFired;
+            boolean downMenuVis,longFired,secondTap;
             public boolean onTouch(View v,android.view.MotionEvent e){
                 switch(e.getAction()){
                     case MotionEvent.ACTION_DOWN:
@@ -140,15 +143,17 @@ public class FloatBallService extends Service {
                         lastBallDown=System.currentTimeMillis();
                         dx=e.getRawX()-ballLp.x; dy=e.getRawY()-ballLp.y;
                         downX=e.getRawX(); downY=e.getRawY();
-                        downMenuVis=menuVisible;   // 按下时记录菜单状态
+                        downMenuVis=menuVisible;
                         longFired=false;
-                        // 长按不动 = 截图(无需延迟单击, 不牺牲点按手感)
+                        secondTap=pendingSingleTap!=null && System.currentTimeMillis()-lastTapUp<=DOUBLE_TAP_MS;
+                        if(secondTap) hd.removeCallbacks(pendingSingleTap);
                         cancelLongPressShot();
                         longPressShot=new Runnable(){ public void run(){
                             longFired=true; longPressShot=null;
-                            try{ if(ball!=null) ball.setAlpha(0.5f); }catch(Exception ex){}
-                            Log.i("FloatBall","ball long-press -> shot");
-                            captureScreen();
+                            if(pendingSingleTap!=null){ hd.removeCallbacks(pendingSingleTap); pendingSingleTap=null; }
+                            lastTapUp=0;
+                            Log.i("FloatBall","ball long-press -> clear background");
+                            clearBackground();
                         }};
                         ball.postDelayed(longPressShot,LONG_PRESS_MS);
                         return true;
@@ -161,30 +166,36 @@ public class FloatBallService extends Service {
                         return true;
                     case MotionEvent.ACTION_CANCEL:
                         cancelLongPressShot();
+                        if(secondTap){ pendingSingleTap=null; lastTapUp=0; }
+                        try{ if(ball!=null) ball.setAlpha(1f); }catch(Exception ex){}
                         return true;
                     case MotionEvent.ACTION_UP:
                         cancelLongPressShot();
                         if(longFired){ try{ if(ball!=null) ball.setAlpha(1f); }catch(Exception ex){} return true; }
-                        // 用位移判断: 没真正拖动=点按(按下时开着→关, 关着→开); 拖动过=吸附到边缘
                         float dist=(float)Math.hypot(e.getRawX()-downX,e.getRawY()-downY);
                         int slop=android.view.ViewConfiguration.get(FloatBallService.this).getScaledTouchSlop();
                         if(dist<slop){
-                            if(subVisible){ hideSubNow(); Log.i("FloatBall","tap close apps sub"); }
-                            else if(downMenuVis){ hideMenu(); Log.i("FloatBall","tap close menu dist="+(int)dist); }
-                            else {
-                                if(!menuVisible){
-                                    // 外部收起事件先于球的DOWN到达, 会先把菜单关掉;
-                                    // 只在极短窗口(同一次手势)内抑制重开, 以免快速双击被吞
-                                    if(System.currentTimeMillis()-lastHide<120){
-                                        Log.i("FloatBall","suppress reopen after outside-hide");
-                                    }else{
-                                        menuVisible=true; showMenu(true);
-                                        Log.i("FloatBall","tap open menu dist="+(int)dist);
+                            if(secondTap){
+                                pendingSingleTap=null; lastTapUp=0;
+                                Log.i("FloatBall","ball double-tap -> shot");
+                                captureScreen();
+                            }else{
+                                final boolean wasSub=subVisible, wasMenu=downMenuVis;
+                                lastTapUp=System.currentTimeMillis();
+                                pendingSingleTap=new Runnable(){ public void run(){
+                                    pendingSingleTap=null;
+                                    if(wasSub){ hideSubNow(); Log.i("FloatBall","tap close apps sub"); }
+                                    else if(wasMenu){ hideMenu(); Log.i("FloatBall","tap close menu"); }
+                                    else if(!menuVisible && System.currentTimeMillis()-lastHide>=120){
+                                        menuVisible=true; showMenu(true); Log.i("FloatBall","tap open menu");
                                     }
-                                }
+                                }};
+                                hd.postDelayed(pendingSingleTap,DOUBLE_TAP_MS);
                             }
+                        }else{
+                            if(secondTap){ pendingSingleTap=null; lastTapUp=0; }
+                            snapBall(); Log.i("FloatBall","drag snap dist="+(int)dist);
                         }
-                        else { snapBall(); Log.i("FloatBall","drag snap dist="+(int)dist); }
                         return true;
                 }
                 return false;
@@ -715,7 +726,7 @@ public class FloatBallService extends Service {
         try{ if(sub!=null) sub.setVisibility(View.GONE); }catch(Exception e){}
     }
     void showBallAfterShot(){
-        try{ if(ball!=null) ball.setVisibility(View.VISIBLE); }catch(Exception e){}
+        try{ if(ball!=null){ ball.setAlpha(1f); ball.setVisibility(View.VISIBLE); } }catch(Exception e){}
     }
     void captureScreen(){
         hideBallForShot();
@@ -1214,6 +1225,8 @@ public class FloatBallService extends Service {
     public void onDestroy(){
         running=false;
         cancelLongPressShot();
+        if(pendingSingleTap!=null){ hd.removeCallbacks(pendingSingleTap); pendingSingleTap=null; }
+        lastTapUp=0;
         try{ if(dmgr!=null&&dlistener!=null) dmgr.unregisterDisplayListener(dlistener); }catch(Exception e){}
         dmgr=null; dlistener=null;
         // 关键: 停止服务时把所有悬浮窗从 WindowManager 摘掉,

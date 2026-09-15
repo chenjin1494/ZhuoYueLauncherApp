@@ -3,8 +3,10 @@ package com.helper.urlfeeder;
 import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.database.Cursor;
+import android.database.MatrixCursor;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
+import android.provider.OpenableColumns;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -20,18 +22,35 @@ public class ApkProvider extends ContentProvider {
 
     public boolean onCreate() { return true; }
 
-    public Cursor query(Uri u, String[] proj, String sel, String[] args, String sort) { return null; }
+    public Cursor query(Uri u, String[] proj, String sel, String[] args, String sort) {
+        String name = u.getLastPathSegment();
+        File f = safeFile(name);
+        String[] cols = (proj == null || proj.length == 0)
+            ? new String[]{OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE} : proj;
+        MatrixCursor c = new MatrixCursor(cols, 1);
+        Object[] row = new Object[cols.length];
+        for (int i = 0; i < cols.length; i++) {
+            if (OpenableColumns.DISPLAY_NAME.equals(cols[i])) row[i] = name;
+            else if (OpenableColumns.SIZE.equals(cols[i])) row[i] = f == null ? 0L : f.length();
+            else row[i] = null;
+        }
+        c.addRow(row);
+        return c;
+    }
     public String getType(Uri u) { return "application/vnd.android.package-archive"; }
     public Uri insert(Uri u, ContentValues v) { return null; }
     public int delete(Uri u, String sel, String[] args) { return 0; }
     public int update(Uri u, ContentValues v, String sel, String[] args) { return 0; }
 
+    private File safeFile(String name) {
+        if (name == null || name.length() == 0 || name.indexOf('/') >= 0 || name.contains("..")) return null;
+        return new File(getContext().getCacheDir(), name);
+    }
+
     public ParcelFileDescriptor openFile(Uri u, String mode) throws FileNotFoundException {
-        String name = u.getLastPathSegment();
-        if (name == null || name.length() == 0 || name.indexOf('/') >= 0 || name.contains(".."))
-            throw new FileNotFoundException("bad name");
-        File f = new File(getContext().getCacheDir(), name);
-        if (!f.exists()) throw new FileNotFoundException(name);
+        File f = safeFile(u.getLastPathSegment());
+        if (f == null) throw new FileNotFoundException("bad name");
+        if (!f.exists()) throw new FileNotFoundException(u.getLastPathSegment());
         return ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY);
     }
 }

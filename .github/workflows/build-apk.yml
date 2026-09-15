@@ -63,7 +63,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Publish / update "latest" release (success)
-        if: always() && steps.build.outcome == 'success'
+        if: always() && steps.build.outcome == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
@@ -74,9 +74,14 @@ jobs:
           files: urlfeeder-latest.apk
           make_latest: true
 
-      - name: Report failure (prerelease, 不影响 /releases/latest)
-        if: always() && steps.build.outcome != 'success'
+      - name: Attach APK to published release
+        if: always() && steps.build.outcome == 'success' && github.event_name == 'release'
         uses: softprops/action-gh-release@v2
+        with:
+          files: urlfeeder-latest.apk
+
+      - name: Report failure (prerelease, 不影响 /releases/latest)
+        if: always() && steps.build.outcome != 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         with:
           tag_name: build-status
           name: 构建失败日志
