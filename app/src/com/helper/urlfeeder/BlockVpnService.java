@@ -24,6 +24,7 @@ import java.util.Set;
 public class BlockVpnService extends VpnService {
     static final String TARGET="com.zy.ai.launcher";
     public static volatile boolean running=false;
+    public static volatile boolean paused=false;   // 被其它 VPN 占用时挂起, 对方关闭后自动恢复
 
     // 需要黑洞的上报/追踪主机（保留 jz.zy.com / zxx.zy.com 等业务主机）
     static final String[] BLOCK_HOSTS={
@@ -45,9 +46,42 @@ public class BlockVpnService extends VpnService {
     public int onStartCommand(Intent i,int f,int s){
         String a=(i==null)?null:i.getAction();
         if("stop".equals(a)){ stopAll(); stopSelf(); return START_NOT_STICKY; }
-        refreshAsync();
+        ensureTunnel();
         return START_STICKY;
     }
+
+    // 是否已有别的 VPN 在运行(我们自己没建立时才需要判断)
+    boolean otherVpnActive(){
+        try{
+            android.net.ConnectivityManager cm=(android.net.ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
+            if(cm==null) return false;
+            for(android.net.Network n:cm.getAllNetworks()){
+                android.net.NetworkCapabilities c=cm.getNetworkCapabilities(n);
+                if(c!=null&&c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) return true;
+            }
+        }catch(Exception e){}
+        return false;
+    }
+    // 已有别的 VPN → 挂起并定时重试; 否则正常建立
+    void ensureTunnel(){
+        if(running) return;
+        if(otherVpnActive()){
+            paused=true;
+            Log.i("BlockVpn","other VPN active -> paused, retry in 30s");
+            hd.removeCallbacks(retryRun);
+            hd.postDelayed(retryRun,30000);
+            return;
+        }
+        paused=false;
+        refreshAsync();
+    }
+    final Runnable retryRun=new Runnable(){ public void run(){
+        if(running){ return; }
+        if(otherVpnActive()){ paused=true; hd.postDelayed(retryRun,30000); return; }
+        paused=false;
+        Log.i("BlockVpn","other VPN gone -> resuming");
+        refreshAsync();
+    }};
 
     void refreshAsync(){
         new Thread(new Runnable(){ public void run(){
@@ -71,6 +105,13 @@ public class BlockVpnService extends VpnService {
 
     void rebuildTunnel(Set<String> ips){
         try{
+            if(!running && otherVpnActive()){          // 别的 VPN 在跑 → 不抢槽位
+                paused=true;
+                hd.removeCallbacks(retryRun);
+                hd.postDelayed(retryRun,30000);
+                Log.i("BlockVpn","skip establish: other VPN active");
+                return;
+            }
             if(running) stopTunnel();
             if(ips.isEmpty()){ Log.i("BlockVpn","no blocked IP resolved, tunnel idle"); return; }
             Builder b=new Builder();
@@ -95,10 +136,18 @@ public class BlockVpnService extends VpnService {
                 Log.i("BlockVpn","blackhole loop exit");
             }},"vpn-blackhole");
             worker.start();
+            if(paused){ paused=false; notifyUser("其它 VPN 已关闭，卓越上报拦截已自动恢复"); }
             Log.i("BlockVpn","selective tunnel up, routes="+ips.size());
         }catch(Exception e){ Log.e("BlockVpn","rebuild err",e); }
     }
 
+    void notifyUser(final String msg){
+        try{
+            new android.os.Handler(getMainLooper()).post(new Runnable(){ public void run(){
+                try{ android.widget.Toast.makeText(BlockVpnService.this,msg,android.widget.Toast.LENGTH_LONG).show(); }catch(Exception e){}
+            }});
+        }catch(Exception e){}
+    }
     void stopTunnel(){
         running=false;
         try{ if(worker!=null) worker.interrupt(); }catch(Exception e){}
@@ -109,9 +158,19 @@ public class BlockVpnService extends VpnService {
     }
     void stopAll(){
         try{ hd.removeCallbacks(refresher); }catch(Exception e){}
+        try{ hd.removeCallbacks(retryRun); }catch(Exception e){}
+        paused=false;
         stopTunnel();
     }
 
-    public void onRevoke(){ stopAll(); stopSelf(); }
+    public void onRevoke(){
+        // 被别的 VPN 顶掉: 挂起并等待对方关闭后自动恢复(不退出服务)
+        stopTunnel();
+        paused=true;
+        Log.i("BlockVpn","revoked by another VPN -> paused");
+        notifyUser("已让位给其它 VPN，卓越上报拦截暂停；对方关闭后会自动恢复");
+        hd.removeCallbacks(retryRun);
+        hd.postDelayed(retryRun,15000);
+    }
     public void onDestroy(){ stopAll(); super.onDestroy(); }
 }

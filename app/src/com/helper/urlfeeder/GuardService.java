@@ -119,6 +119,11 @@ public class GuardService extends Service {
         final long t0=System.currentTimeMillis();
         new Thread(new Runnable(){ public void run(){
             suppressZy();
+            try{
+                if(prefs.getBoolean("vpn_block_zy",false)&&!BlockVpnService.running){
+                    startService(new Intent(GuardService.this,BlockVpnService.class));
+                }
+            }catch(Exception e){}
             boolean ok=probe("www.bilibili.com",443)||probe("www.qq.com",443);
             h.post(new Runnable(){ public void run(){
                 if(!alive) return;

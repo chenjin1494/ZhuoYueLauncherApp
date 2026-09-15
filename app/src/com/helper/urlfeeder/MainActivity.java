@@ -442,8 +442,15 @@ public class MainActivity extends Activity {
         settingsBody.addView(secOpt("📊 查询桌面状态",new Runnable(){public void run(){szStatus();}}));
         boolean vpnOn=prefs.getBoolean("vpn_block_zy",false);
         boolean supOn=prefs.getBoolean("suppress_zy",false);
-        settingsBody.addView(secOpt(vpnOn?"🛡 拦截卓越上报域名：已开启 ✓（点此关闭）":"🛡 拦截卓越上报域名（只拦上报/追踪，保留其它云端功能）",
-            new Runnable(){public void run(){toggleBlockVpn();}}));
+        boolean fwOn=prefs.getBoolean("fw_block_zy",false);
+        String vpnTxt;
+        if(!vpnOn) vpnTxt="🛡 拦截卓越上报域名（只拦上报/追踪，保留其它云端功能）";
+        else if(BlockVpnService.running) vpnTxt="🛡 拦截卓越上报域名：已开启 ✓（点此关闭）";
+        else vpnTxt="🛡 拦截卓越上报域名：已暂停（让位给其它 VPN，关闭后自动恢复）";
+        settingsBody.addView(secOpt(vpnTxt,new Runnable(){public void run(){toggleBlockVpn();}}));
+        settingsBody.addView(secOpt(fwOn?"🔥 防火墙IP规则拦截：已开启 ✓（点此一键复原）":"🔥 防火墙IP规则拦截（不占 VPN·改前先快照，可一键复原）",
+            new Runnable(){public void run(){toggleFwBlock();}}));
+        settingsBody.addView(secOpt("🔍 查看管控防火墙规则（只读）",new Runnable(){public void run(){showFwRules();}}));
         settingsBody.addView(secOpt(supOn?"🛑 持续抑制卓越监控：已开启 ✓（需 Lawnchair 桌面）":"🛑 持续抑制卓越监控（强停其监控服务·需 Shizuku）",
             new Runnable(){public void run(){toggleSuppressZy();}}));
         settingsBody.addView(gap(6));
@@ -995,6 +1002,69 @@ public class MainActivity extends Activity {
             prefs.edit().putBoolean("float_on",true).commit();
             toast("悬浮球已启动（开机也会自动开启）"); addLog("悬浮球导航已启动");
         }catch(Exception e){ toast("启动失败:"+e.getMessage()); }
+    }
+    // ---- 防火墙 IP 规则拦截(不占 VPN, 可复原) ----
+    void toggleFwBlock(){
+        if(prefs.getBoolean("fw_block_zy",false)) restoreFwRules(); else enableFwBlock();
+    }
+    void enableFwBlock(){
+        toast("正在读取原规则并写入…"); addLog("防火墙拦截: 快照原规则…");
+        new Thread(new Runnable(){ public void run(){
+            FwRules.Res blk=FwRules.getBlackRules(MainActivity.this);
+            FwRules.Res wht=FwRules.getWhiteRules(MainActivity.this);
+            if(!blk.good()||!wht.good()){
+                runOnUiThread(new Runnable(){ public void run(){ toast("读取防火墙原规则失败，未做任何修改（管控服务可能未启用）"); addLog("防火墙拦截失败: 读规则失败"); }});
+                return;
+            }
+            prefs.edit().putString("fw_snap_black",FwRules.join(blk.data))
+                        .putString("fw_snap_white",FwRules.join(wht.data)).commit();
+            java.util.Set<String> ips=new java.util.LinkedHashSet<String>();
+            for(String h:BlockVpnService.BLOCK_HOSTS){
+                try{ for(java.net.InetAddress a:java.net.InetAddress.getAllByName(h)) ips.add(a.getHostAddress()); }catch(Exception e){}
+            }
+            int n=0;
+            for(String ip:ips){ FwRules.Res r=FwRules.addBlackRule(MainActivity.this,ip); if(r.good()) n++; }
+            FwRules.writeToFile(MainActivity.this);
+            final int fn=n, fw=wht.data.size(), fb=blk.data.size();
+            prefs.edit().putBoolean("fw_block_zy",true).putInt("fw_rule_count",fn).commit();
+            runOnUiThread(new Runnable(){ public void run(){
+                toast("已写入 "+fn+" 条上报IP黑名单（原规则已快照：白"+fw+" 黑"+fb+"，可一键复原）");
+                addLog("防火墙拦截开启: +"+fn+" 条黑名单, 快照 白"+fw+"/黑"+fb);
+                buildSettings();
+            }});
+        }},"fw-block").start();
+    }
+    void restoreFwRules(){
+        toast("正在复原防火墙规则…"); addLog("防火墙拦截: 复原中…");
+        new Thread(new Runnable(){ public void run(){
+            java.util.List<String> w=FwRules.split(prefs.getString("fw_snap_white",""));
+            java.util.List<String> b=FwRules.split(prefs.getString("fw_snap_black",""));
+            FwRules.clearIpHostRules(MainActivity.this);
+            for(String r:w) FwRules.addWhiteRule(MainActivity.this,r);
+            for(String r:b) FwRules.addBlackRule(MainActivity.this,r);
+            FwRules.writeToFile(MainActivity.this);
+            prefs.edit().putBoolean("fw_block_zy",false).commit();
+            final int fn=w.size(), fb=b.size();
+            runOnUiThread(new Runnable(){ public void run(){
+                toast("已复原防火墙规则（白"+fn+" 黑"+fb+"，与开启前一致）");
+                addLog("防火墙拦截已复原: 白"+fn+"/黑"+fb);
+                buildSettings();
+            }});
+        }},"fw-restore").start();
+    }
+    void showFwRules(){
+        new Thread(new Runnable(){ public void run(){
+            FwRules.Res b=FwRules.getBlackRules(MainActivity.this);
+            FwRules.Res w=FwRules.getWhiteRules(MainActivity.this);
+            final boolean bok=b.good(), wok=w.good();
+            final String bs=bok?FwRules.join(b.data):"", ws=wok?FwRules.join(w.data):"";
+            final int bn=bok?b.data.size():-1, wn=wok?w.data.size():-1;
+            runOnUiThread(new Runnable(){ public void run(){
+                toast("防火墙规则: 黑名单 "+(bok?bn+" 条":"读取失败")+" / 白名单 "+(wok?wn+" 条":"读取失败"));
+                addLog("防火墙黑名单 "+bn+" 条: "+bs.replace("\n","，")); 
+                addLog("防火墙白名单 "+wn+" 条: "+ws.replace("\n","，"));
+            }});
+        }},"fw-view").start();
     }
     // ---- 卓越Launcher 云端监控治理 ----
     static final int REQ_VPN=91;
