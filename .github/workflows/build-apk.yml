@@ -24,15 +24,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept licenses & install platform/build-tools
+      - name: Configure Android SDK packages
         run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          yes | sdkmanager --install "platforms;android-34" "build-tools;34.0.0" || true
-          echo "== platforms =="; ls "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/platforms" || true
-          echo "== build-tools =="; ls "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" || true
+          echo "ANDROID_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          yes | "$SDKMANAGER" --install "platforms;android-34" "build-tools;34.0.0"
+          test -f "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/platforms/android-34/android.jar"
+          test -x "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/34.0.0/aapt2"
+          echo "Android SDK 34 ready"
 
       # 产物固定叫 urlfeeder-latest.apk（ASCII），App 内按固定 URL 下载：
       #   https://github.com/chenjin1494/ZhuoYueLauncherApp/releases/latest/download/urlfeeder-latest.apk
