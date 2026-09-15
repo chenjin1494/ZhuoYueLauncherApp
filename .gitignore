@@ -1,6 +1,8 @@
 # 构建产物
 build/
 *.apk
+!dist/
+!dist/urlfeeder-latest.apk
 *.idsig
 
 # 本地工具/大文件不入库
