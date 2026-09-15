@@ -82,6 +82,7 @@ jobs:
 
       - name: Report failure (prerelease, 不影响 /releases/latest)
         if: always() && steps.build.outcome != 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: build-status
           name: 构建失败日志
