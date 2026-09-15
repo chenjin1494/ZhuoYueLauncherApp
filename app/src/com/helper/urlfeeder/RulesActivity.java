@@ -324,17 +324,17 @@ public class RulesActivity extends Activity {
 
     private String rebuild(List<String> black, List<String> white) {
         FwRules.Res clear = FwRules.clearIpHostRules(this);
-        if (!clear.good()) return "clear failed: " + error(clear);
+        if (!clear.applied()) return "clear failed: " + error(clear);
         for (String rule : white) {
             FwRules.Res result = FwRules.addWhiteRule(this, rule);
-            if (!result.good()) return "white rule failed: " + rule + ": " + error(result);
+            if (!result.applied()) return "white rule failed: " + rule + ": " + error(result);
         }
         for (String rule : black) {
             FwRules.Res result = FwRules.addBlackRule(this, rule);
-            if (!result.good()) return "black rule failed: " + rule + ": " + error(result);
+            if (!result.applied()) return "black rule failed: " + rule + ": " + error(result);
         }
         FwRules.Res write = FwRules.writeToFile(this);
-        return write.good() ? null : "write failed: " + error(write);
+        return write.applied() ? null : "write failed: " + error(write);
     }
 
     private boolean snapshot(List<String> black, List<String> white) {

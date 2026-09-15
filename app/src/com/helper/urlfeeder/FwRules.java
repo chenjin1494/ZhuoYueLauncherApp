@@ -30,6 +30,8 @@ public class FwRules {
         public boolean ok=false;
         public String err=null;
         public boolean good(){ return data!=null; }
+        /** 写操作成功必须同时有 AFWRes 数据且 operationResult=true。 */
+        public boolean applied(){ return data!=null&&ok; }
     }
 
     static Res call(Context ctx,final int code,final String arg,final Integer intArg){
