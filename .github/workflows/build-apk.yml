@@ -8,11 +8,12 @@ on:
   release:
     types: [ published ]    # 发 Release 自动构建
 
+permissions:
+  contents: write           # 需要写权限：创建/更新 latest Release(供 App 内自更新下载)
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write        # 需要写权限来创建/更新 latest Release(供 App 内自更新下载)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,42 +30,59 @@ jobs:
       - name: Accept licenses & install platform/build-tools
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" >/dev/null
+          yes | sdkmanager --install "platforms;android-34" "build-tools;34.0.0" || true
+          echo "== platforms =="; ls "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/platforms" || true
+          echo "== build-tools =="; ls "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" || true
 
+      # 产物固定叫 urlfeeder-latest.apk（ASCII），App 内按固定 URL 下载：
+      #   https://github.com/chenjin1494/ZhuoYueLauncherApp/releases/latest/download/urlfeeder-latest.apk
       - name: Build APK
+        id: build
+        continue-on-error: true
         run: |
           chmod +x build.sh
-          ./build.sh 万能转发器-ci.apk
+          set -o pipefail
+          ./build.sh urlfeeder-latest.apk 2>&1 | tee build.log
 
-      - name: Prepare ASCII asset name
-        run: cp 万能转发器-ci.apk urlfeeder-latest.apk
+      # 失败时把日志尾部发到公开的 build-status Release，便于无凭据排查
+      - name: Prepare log tail
+        if: always()
+        run: |
+          tail -c 6000 build.log > log_tail.txt 2>/dev/null || echo "(no build log)" > log_tail.txt
+          { echo "结果: ${{ steps.build.outcome }}"; echo; echo '```'; cat log_tail.txt; echo '```'; } > status_body.txt
+          cat status_body.txt | head -50
 
-      - name: Upload APK artifact
+      - name: Upload build files
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: urlfeeder-apk
+          name: urlfeeder-build
           path: |
-            万能转发器-ci.apk
             urlfeeder-latest.apk
+            build.log
+          if-no-files-found: warn
 
-      # 固定 tag=latest 的 Release: App 内「检查更新」按固定 URL 下载
-      #   https://github.com/chenjin1494/ZhuoYueLauncherApp/releases/latest/download/urlfeeder-latest.apk
-      - name: Publish / update "latest" release
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+      - name: Publish / update "latest" release (success)
+        if: steps.build.outcome == 'success'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: 最新构建 (latest)
           body: |
             自动构建，供 App 内「💾 备份/恢复/更新 → ⬆️ 检查更新」直接下载安装。
-            签名与本地构建一致，可覆盖安装且保留设置。
+            签名与本地构建一致（仓库内 keystore/urlfeeder.jks），可覆盖安装且保留设置。
           files: urlfeeder-latest.apk
           make_latest: true
 
-      - name: Attach APK to GitHub Release
-        if: github.event_name == 'release'
+      - name: Report failure (prerelease, 不影响 /releases/latest)
+        if: steps.build.outcome != 'success'
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            万能转发器-ci.apk
-            urlfeeder-latest.apk
+          tag_name: build-status
+          name: 构建失败日志
+          body_path: status_body.txt
+          prerelease: true
+
+      - name: Fail the job if the build failed
+        if: steps.build.outcome != 'success'
+        run: exit 1
