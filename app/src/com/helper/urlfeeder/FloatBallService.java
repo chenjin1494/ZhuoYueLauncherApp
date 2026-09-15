@@ -44,6 +44,9 @@ public class FloatBallService extends Service {
     private WindowManager.LayoutParams subLp;
     private LinearLayout scrim=null;      // 透明拦截屏(盘外点击只收起, 不误触下层)
     private WindowManager.LayoutParams scrimLp;
+    private int lastVisH=0;               // 上次方向下的可视高度(旋转时按比例映射球的位置)
+    private android.hardware.display.DisplayManager dmgr=null;
+    private android.hardware.display.DisplayManager.DisplayListener dlistener=null;
     // 收起悬浮菜单(避免遮挡其它界面按钮)
     public static void collapseMenu(){ try{ if(inst!=null) inst.hideMenu(); }catch(Exception e){} }
     private Handler hd=new Handler();
@@ -92,6 +95,7 @@ public class FloatBallService extends Service {
         wm=(WindowManager)getSystemService(WINDOW_SERVICE);
         w=wm.getDefaultDisplay().getWidth(); h=wm.getDefaultDisplay().getHeight();
         refreshScreen();
+        registerDisplayListener();
 
         ballSz=dp(prefBallSize());
         ball=new LinearLayout(this);
@@ -215,18 +219,62 @@ public class FloatBallService extends Service {
             wm.getDefaultDisplay().getRealMetrics(dm);
             if(dm.widthPixels>0) w=dm.widthPixels;
             if(dm.heightPixels>0) h=dm.heightPixels;
+            int inset=topInsetNow();
+            int vh=h-inset;
+            if(vh<dp(80)) vh=h;
+            lastVisH=vh;
+        }catch(Exception e){}
+    }
+    // 保存停靠(边+高度), 供旋转后与重启后还原
+    void saveBallPos(int edge,int y){
+        try{ getSharedPreferences("pf",0).edit().putInt("float_edge",edge).putInt("float_y",y).commit(); }catch(Exception e){}
+    }
+    // 旋转/尺寸变化: 同侧重停靠 + 纵向按比例映射, 并把显示中的窗口重新居中
+    void reanchorForRotation(){
+        try{
+            int oldVisH=lastVisH;
+            int oldW=w, oldH=h;
+            refreshScreen();
+            if(w==oldW&&h==oldH) return;            // 尺寸没变, 不用处理
+            if(ball!=null){
+                int bw=(ballSz>0)?ballSz:dp(46);
+                int margin=dp(12);
+                int edge=(ballLp.x+bw/2<oldW/2)?0:1;      // 用旋转前位置判断原停靠边
+                float ratio=0.5f;
+                if(oldVisH>bw) ratio=(ballLp.y-dp(4))/(float)(oldVisH-bw);
+                ratio=Math.max(0f,Math.min(1f,ratio));
+                int[] bd=ballBounds();
+                int ny=bd[2]+Math.round(ratio*(bd[3]-bd[2]));
+                ballLp.x=(edge==0)?Math.max(bd[0],margin):Math.max(bd[0],w-bw-margin);
+                ballLp.y=Math.max(bd[2],Math.min(bd[3],ny));
+                try{ wm.updateViewLayout(ball,ballLp); }catch(Exception e){}
+                saveBallPos(edge,ballLp.y);
+                Log.i("FloatBall","reanchor w="+w+" h="+h+" ball x="+ballLp.x+" y="+ballLp.y);
+            }
+            int dq=discSize();
+            if(menuVisible&&menu!=null){ menuLp.x=discCenterX(dq); menuLp.y=discCenterY(dq); try{ wm.updateViewLayout(menu,menuLp);}catch(Exception e){} }
+            if(subVisible&&sub!=null){ subLp.x=discCenterX(dq); subLp.y=discCenterY(dq); try{ wm.updateViewLayout(sub,subLp);}catch(Exception e){} }
+            if(scrim!=null){ scrimLp.width=w; scrimLp.height=h; scrimLp.x=0; scrimLp.y=0; try{ wm.updateViewLayout(scrim,scrimLp);}catch(Exception e){} }
+        }catch(Exception e){}
+    }
+    // 注册显示变化监听(旋转时 Service 的 onConfigurationChanged 不一定回调, 用它更可靠)
+    void registerDisplayListener(){
+        try{
+            if(dmgr!=null||wm==null) return;
+            dmgr=(android.hardware.display.DisplayManager)getSystemService(DISPLAY_SERVICE);
+            if(dmgr==null) return;
+            dlistener=new android.hardware.display.DisplayManager.DisplayListener(){
+                public void onDisplayAdded(int id){}
+                public void onDisplayRemoved(int id){}
+                public void onDisplayChanged(int id){ if(id==0) reanchorForRotation(); }
+            };
+            dmgr.registerDisplayListener(dlistener,hd);
+            Log.i("FloatBall","display listener registered");
         }catch(Exception e){}
     }
     public void onConfigurationChanged(android.content.res.Configuration c){
         super.onConfigurationChanged(c);
-        try{
-            refreshScreen();
-            if(ball!=null){
-                clampBallOnScreen();
-                wm.updateViewLayout(ball,ballLp);
-                Log.i("FloatBall","rotation -> w="+w+" h="+h+" ball x="+ballLp.x+" y="+ballLp.y);
-            }
-        }catch(Exception e){}
+        reanchorForRotation();
     }
     // 轮盘居中(用与悬浮球相同的布局坐标空间: 该空间从状态栏下沿开始)
     int discCenterX(int dq){ return Math.max(0,(w-dq)/2); }
@@ -1059,12 +1107,7 @@ public class FloatBallService extends Service {
         if(targetY<bd[2]) targetY=bd[2];
         if(targetY>bd[3]) targetY=bd[3];
         // 记忆停靠: 贴边(0左/1右) + 高度
-        try{
-            getSharedPreferences("pf",0).edit()
-                .putInt("float_edge",(cx<w/2)?0:1)
-                .putInt("float_y",targetY)
-                .commit();
-        }catch(Exception e){}
+        saveBallPos((cx<w/2)?0:1,targetY);
         if(targetX==ballLp.x&&targetY==ballLp.y) return;
         final int fx=ballLp.x,fy=ballLp.y,tx=targetX,ty=targetY;
         if(snapAnim!=null) snapAnim.cancel();
@@ -1100,6 +1143,8 @@ public class FloatBallService extends Service {
     }
     public void onDestroy(){
         running=false;
+        try{ if(dmgr!=null&&dlistener!=null) dmgr.unregisterDisplayListener(dlistener); }catch(Exception e){}
+        dmgr=null; dlistener=null;
         // 关键: 停止服务时把所有悬浮窗从 WindowManager 摘掉,
         // 否则(如设置里"停止悬浮球"走 stopService)窗口会残留, 再启动会叠加成多个球
         try{ if(snapAnim!=null){ snapAnim.cancel(); } }catch(Exception e){}
