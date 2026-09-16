@@ -170,6 +170,7 @@ public class MainActivity extends Activity {
 
     void buildUi(){
         rootF=new FrameLayout(this);
+        rootF.setBackground(UiStyle.appBackground());
         bgWall=new ImageView(this); bgWall.setScaleType(ImageView.ScaleType.CENTER_CROP);
         rootF.addView(bgWall,new FrameLayout.LayoutParams(-1,-1));
         content=new LinearLayout(this);
@@ -190,7 +191,7 @@ public class MainActivity extends Activity {
         root.addView(hwrap);
 
         LinearLayout tabs=new LinearLayout(this); tabs.setOrientation(LinearLayout.HORIZONTAL);
-        tabs.setPadding(dp(12),dp(8),dp(12),dp(6));
+        tabs.setPadding(dp(12),dp(4),dp(12),dp(4));
         tabWeb=tab("首页"); tabApps=tab("应用"); tabSet=tab("设置");
         tabWeb.setOnClickListener(new View.OnClickListener(){public void onClick(View v){selectTab(0);}});
         tabApps.setOnClickListener(new View.OnClickListener(){public void onClick(View v){selectTab(1);buildApps();}});
@@ -200,7 +201,7 @@ public class MainActivity extends Activity {
         tabs.addView(tabApps,new LinearLayout.LayoutParams(0,-1,1f));
         tabs.addView(sp(8));
         tabs.addView(tabSet,new LinearLayout.LayoutParams(0,-1,1f));
-        root.addView(tabs,new LinearLayout.LayoutParams(-1,dp(48)));
+        root.addView(tabs,new LinearLayout.LayoutParams(-1,dp(56)));
 
         // web
         webScroll=new ScrollView(this); webScroll.setSmoothScrollingEnabled(true); ScrollView sw=webScroll;
@@ -310,7 +311,10 @@ public class MainActivity extends Activity {
 
         root.addView(pageApps,new LinearLayout.LayoutParams(-1,0,1f));
         root.addView(pageSet,new LinearLayout.LayoutParams(-1,0,1f));
-        rootF.addView(content,new FrameLayout.LayoutParams(-1,-1));
+        int widthDp=getResources().getConfiguration().screenWidthDp;
+        FrameLayout.LayoutParams contentLp=new FrameLayout.LayoutParams(widthDp>=900?dp(Math.min(960,widthDp)):-1,-1);
+        contentLp.gravity=Gravity.TOP|Gravity.CENTER_HORIZONTAL;
+        rootF.addView(content,contentLp);
         setContentView(rootF);
         // 设置页改为首次切入时才构建(懒加载)，显著加快冷启动
     }
@@ -374,7 +378,7 @@ public class MainActivity extends Activity {
             "· 点按 = 打开应用；长按 = 详情（含卸载）\n"+
             "\n▍设置页\n"+
             "· 🎨 界面背景 / 🖼 壁纸：换背景与桌面壁纸\n"+
-            "· 🧊 玻璃透明度：5 档实时调整按钮玻璃质感\n"+
+            "· 表面透明度：5 档调整信息面板与按钮层次\n"+
             "· 🛡 网络守护：开启后被拦自动开网（重启自启）\n"+
             "· 🛠 Shizuku 桌面管理：切换 Lawnchair/卓越 桌面\n"+
             "· ⚡ 工具：设默认浏览器、开 ADB、手动开网\n"+
@@ -385,13 +389,13 @@ public class MainActivity extends Activity {
         help.setPadding(dp(14),dp(12),dp(14),dp(12));
         settingsBody.addView(help);
         settingsBody.addView(gap(6));
-        settingsBody.addView(secTitle("🎨 界面背景"));
-        settingsBody.addView(secOpt("渐变星空（默认）",new Runnable(){public void run(){setBgStyle(0);}}));
-        settingsBody.addView(secOpt("薄荷清新",new Runnable(){public void run(){setBgStyle(1);}}));
-        settingsBody.addView(secOpt("深蓝夜穹",new Runnable(){public void run(){setBgStyle(2);}}));
-        settingsBody.addView(secOpt("系统壁纸 · 毛玻璃",new Runnable(){public void run(){setBgStyle(3);}}));
+        settingsBody.addView(secTitle("界面背景"));
+        settingsBody.addView(secOpt("深墨工作台（默认）",new Runnable(){public void run(){setBgStyle(0);}}));
+        settingsBody.addView(secOpt("青岚",new Runnable(){public void run(){setBgStyle(1);}}));
+        settingsBody.addView(secOpt("深海蓝灰",new Runnable(){public void run(){setBgStyle(2);}}));
+        settingsBody.addView(secOpt("系统壁纸",new Runnable(){public void run(){setBgStyle(3);}}));
         settingsBody.addView(gap(2));
-        settingsBody.addView(secTitle("🧊 玻璃透明度（点选即时生效）"));
+        settingsBody.addView(secTitle("表面透明度（即时生效）"));
         int ga=prefs.getInt("ga",2);
         settingsBody.addView(secOpt((ga==0?"▣ 当前：很透明":"▢ 很透明"),new Runnable(){public void run(){setGlassAlpha(0);}}));
         settingsBody.addView(secOpt((ga==1?"▣ 当前：偏透明":"▢ 偏透明"),new Runnable(){public void run(){setGlassAlpha(1);}}));
@@ -741,7 +745,7 @@ public class MainActivity extends Activity {
     void setBgStyle(int s){ prefs.edit().putInt("bg",s).commit(); applyBg(); }
     void setGlassAlpha(int l){
         prefs.edit().putInt("ga",l).commit();
-        toast("玻璃透明度已更新 · 正在刷新界面…");
+        toast("表面透明度已更新 · 正在刷新界面…");
         rebuildUi();
     }
     // 重建整个 UI：用于 glass 等构建期取值的变化即时生效（保留当前标签与网页输入）
@@ -761,7 +765,7 @@ public class MainActivity extends Activity {
         int s=prefs.getInt("bg",0);
         bgWall.setVisibility(View.GONE);
         if(dim!=null) dim.setVisibility(View.GONE);
-        if(s==3){ content.setBackground(UiStyle.appBackground()); wallpaperBackdrop(); }
+        if(s==3){ content.setBackgroundColor(0x220B1113); wallpaperBackdrop(); }
         else if(s==1) content.setBackground(gradBg(new int[]{0xFF0A1717,0xFF112622,0xFF0E1A1C}));
         else if(s==2) content.setBackground(gradBg(new int[]{0xFF0A1017,0xFF142331,0xFF10191F}));
         else content.setBackground(UiStyle.appBackground());

@@ -122,7 +122,7 @@ public class AuditActivity extends Activity {
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) { render(); }
             public void onNothingSelected(AdapterView<?> parent) { render(); }
         });
-        filters.addView(category, new LinearLayout.LayoutParams(0, dp(44), 0.38f));
+        filters.addView(category, new LinearLayout.LayoutParams(0, dp(48), 0.38f));
 
         search = new EditText(this);
         search.setSingleLine(true);
@@ -133,7 +133,7 @@ public class AuditActivity extends Activity {
         search.setPadding(dp(12), 0, dp(12), 0);
         search.setBackground(UiStyle.field(this));
         Fonts.apply(search);
-        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(44), 0.62f);
+        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(48), 0.62f);
         searchParams.leftMargin = dp(8);
         filters.addView(search, searchParams);
         root.addView(filters, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
