@@ -50,8 +50,7 @@ public class AuditActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(0xff111315);
-        getWindow().setNavigationBarColor(0xff111315);
+        UiStyle.systemBars(this);
         setContentView(buildContent());
         load();
     }
@@ -65,23 +64,23 @@ public class AuditActivity extends Activity {
     private View buildContent() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(0xff111315);
-        root.setPadding(dp(12), dp(10), dp(12), dp(12));
+        root.setBackground(UiStyle.appBackground());
+        root.setPadding(dp(12), dp(8), dp(12), dp(12));
 
         LinearLayout heading = new LinearLayout(this);
         heading.setGravity(Gravity.CENTER_VERTICAL);
         Button back = action("‹", "返回", new View.OnClickListener() {
             public void onClick(View view) { finish(); }
         });
-        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(dp(42), dp(42));
+        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(dp(48), dp(48));
         heading.addView(back, backParams);
 
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
         titles.setPadding(dp(10), 0, dp(8), 0);
-        TextView title = text("审计日志", 19, 0xfff1f3f4);
+        TextView title = text("审计日志", 18, UiStyle.TEXT);
         title.setTypeface(Fonts.nerd(this), Typeface.BOLD);
-        subtitle = text("正在读取…", 11, 0xff92999f);
+        subtitle = text("正在读取…", 11, UiStyle.TEXT_3);
         titles.addView(title);
         titles.addView(subtitle);
         heading.addView(titles, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -102,9 +101,12 @@ public class AuditActivity extends Activity {
         actions.addView(action("导出", "导出日志", new View.OnClickListener() {
             public void onClick(View view) { exportLog(); }
         }), actionParams());
-        actions.addView(action("清空", "清空日志", new View.OnClickListener() {
+        Button clearAction = action("清空", "清空日志", new View.OnClickListener() {
             public void onClick(View view) { confirmClear(); }
-        }), actionParams());
+        });
+        clearAction.setTextColor(UiStyle.DANGER);
+        clearAction.setBackground(UiStyle.button(this,0xFF34201F));
+        actions.addView(clearAction, actionParams());
         actionScroll.addView(actions, new HorizontalScrollView.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(actionScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
@@ -113,7 +115,7 @@ public class AuditActivity extends Activity {
         LinearLayout filters = new LinearLayout(this);
         filters.setGravity(Gravity.CENTER_VERTICAL);
         category = new Spinner(this);
-        category.setBackground(panel(0xff1a1d20, 0xff343a3f));
+        category.setBackground(UiStyle.field(this));
         category.setPadding(dp(8), 0, dp(8), 0);
         category.setAdapter(new CategoryAdapter(singleton(ALL)));
         category.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
@@ -125,11 +127,11 @@ public class AuditActivity extends Activity {
         search = new EditText(this);
         search.setSingleLine(true);
         search.setHint("搜索内容");
-        search.setHintTextColor(0xff747c82);
-        search.setTextColor(0xffe2e5e7);
+        search.setHintTextColor(UiStyle.TEXT_3);
+        search.setTextColor(UiStyle.TEXT);
         search.setTextSize(13);
         search.setPadding(dp(12), 0, dp(12), 0);
-        search.setBackground(panel(0xff1a1d20, 0xff343a3f));
+        search.setBackground(UiStyle.field(this));
         Fonts.apply(search);
         LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(0, dp(44), 0.62f);
         searchParams.leftMargin = dp(8);
@@ -145,10 +147,10 @@ public class AuditActivity extends Activity {
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackground(panel(0xff16191b, 0xff2a2f33));
-        body = text("", 12, 0xffd8dcdf);
+        scroll.setBackground(UiStyle.panel(this,0xF2101719));
+        body = text("", 12, UiStyle.TEXT_2);
         body.setTextIsSelectable(true);
-        body.setGravity(Gravity.TOP | Gravity.LEFT);
+        body.setGravity(Gravity.TOP | Gravity.START);
         body.setLineSpacing(dp(2), 1f);
         body.setPadding(dp(12), dp(12), dp(12), dp(16));
         scroll.addView(body, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
@@ -302,14 +304,15 @@ public class AuditActivity extends Activity {
         Button button = new Button(this);
         button.setText(label);
         button.setContentDescription(description);
-        button.setTextColor(0xffe3e6e8);
+        button.setTextColor(UiStyle.TEXT_2);
         button.setTextSize(13);
         button.setAllCaps(false);
         button.setGravity(Gravity.CENTER);
         button.setMinWidth(0);
         button.setMinimumWidth(0);
         button.setPadding(dp(12), 0, dp(12), 0);
-        button.setBackground(panel(0xff202428, 0xff3b4248));
+        button.setMinHeight(dp(48));
+        button.setBackground(UiStyle.button(this,UiStyle.SURFACE_2));
         button.setOnClickListener(listener);
         Fonts.apply(button);
         return button;
@@ -317,7 +320,7 @@ public class AuditActivity extends Activity {
 
     private LinearLayout.LayoutParams actionParams() {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(40));
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(48));
         params.rightMargin = dp(7);
         return params;
     }
@@ -370,12 +373,14 @@ public class AuditActivity extends Activity {
         private View categoryView(int position, View convertView, boolean dropdown) {
             TextView view = convertView instanceof TextView ? (TextView) convertView : new TextView(AuditActivity.this);
             view.setText(getItem(position));
-            view.setTextColor(0xffe1e5e7);
+            view.setTextColor(UiStyle.TEXT);
             view.setTextSize(13);
             view.setGravity(Gravity.CENTER_VERTICAL);
             view.setPadding(dp(12), 0, dp(12), 0);
-            view.setBackgroundColor(dropdown ? 0xff24282c : Color.TRANSPARENT);
-            view.setMinHeight(dp(44));
+            view.setSingleLine(true);
+            view.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            view.setBackgroundColor(dropdown ? UiStyle.SURFACE_2 : Color.TRANSPARENT);
+            view.setMinHeight(dp(48));
             Fonts.apply(view);
             return view;
         }

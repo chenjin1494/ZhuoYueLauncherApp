@@ -92,11 +92,7 @@ public class MainActivity extends Activity {
         prefs=getSharedPreferences("pf",0);
         loadLogLines();
         loadHist();
-        if(Build.VERSION.SDK_INT>=21){
-            getWindow().setStatusBarColor(0x00000000);
-            getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
-        }
+        UiStyle.systemBars(this);
         buildUi();
         applyInsets();
         applyBg();
@@ -143,26 +139,8 @@ public class MainActivity extends Activity {
     int ws(int argb,float s){ int a=(argb>>>24); a=Math.min(255,Math.max(0,(int)(a*s))); return (a<<24)|(argb&0xFFFFFF); }
     Drawable glass(){
         float s=glassS();
-        int r=dp(28);
-        // 基底：半透明白，随对角渐深（体积感）
-        GradientDrawable base=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{ws(0x78FFFFFF,s),ws(0x40FFFFFF,s),ws(0x1EFFFFFF,s)});
-        base.setCornerRadius(r);
-        // 顶部菲涅尔高光：玻璃边缘聚集入射光
-        GradientDrawable fres=new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{ws(0x99FFFFFF,s*0.8f),ws(0x14FFFFFF,s*0.8f),0x00FFFFFF});
-        fres.setCornerRadius(r);
-        // 折射斜光：模拟内部光线经左上→右下折射
-        GradientDrawable slant=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{ws(0x59FFFFFF,s),ws(0x0AFFFFFF,s),0x00FFFFFF,ws(0x2EFFFFFF,s)});
-        slant.setCornerRadius(r);
-        // 底部内反光（液态玻璃下缘回光）
-        GradientDrawable bott=new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,new int[]{ws(0x0DFFFFFF,s*0.7f),ws(0x45FFFFFF,s*0.7f)});
-        bott.setCornerRadius(r);
-        // 厚度内阴影：给玻璃"厚度"
-        GradientDrawable shade=new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,new int[]{0x00000000,ws(0x24000000,Math.min(1.5f,s*0.8f))});
-        shade.setCornerRadius(r);
-        // 高亮描边
-        GradientDrawable stroke=new GradientDrawable(); stroke.setCornerRadius(r); stroke.setStroke(dp(1),0x8AFFFFFF);
-        LayerDrawable ld=new LayerDrawable(new Drawable[]{base,fres,slant,bott,shade,stroke});
-        return ld;
+        int a=Math.max(150,Math.min(248,(int)(215*s)));
+        return UiStyle.panel(this,(a<<24)|(UiStyle.SURFACE&0xFFFFFF));
     }
     // 液态按压特效：按下内凹(压入玻璃)，松手带弹性回弹(鼓起)，观感像液态玻璃受压力
     void liquidFx(final View v){
@@ -197,19 +175,23 @@ public class MainActivity extends Activity {
         content=new LinearLayout(this);
         final LinearLayout root=(LinearLayout)content; root.setOrientation(LinearLayout.VERTICAL);
 
-        LinearLayout header=new LinearLayout(this); header.setOrientation(LinearLayout.VERTICAL);
-        header.setPadding(dp(18),dp(14),dp(18),dp(14)); header.setBackground(glass());
-        TextView h1=new TextView(this); h1.setText("🌐 万能转发器"); h1.setTextColor(Color.WHITE); h1.setTextSize(21); h1.setTypeface(Fonts.nerd(this),Typeface.BOLD);
-        TextView h2=new TextView(this); h2.setText("网页转发 · 全应用抽屉 · 一键开网"); h2.setTextColor(0xDDFFFFFF); h2.setTextSize(11); Fonts.apply(h2);
-        header.addView(h1); header.addView(h2);
+        LinearLayout header=new LinearLayout(this); header.setOrientation(LinearLayout.HORIZONTAL); header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(16),dp(12),dp(14),dp(12)); header.setBackground(UiStyle.panel(this));
+        LinearLayout brand=new LinearLayout(this); brand.setOrientation(LinearLayout.VERTICAL);
+        TextView h1=new TextView(this); h1.setText("万能转发器"); h1.setTextSize(19); h1.setTypeface(Fonts.nerd(this),Typeface.BOLD); UiStyle.applyText(h1,UiStyle.TEXT);
+        TextView h2=new TextView(this); h2.setText("连接 · 应用 · 设备工具"); h2.setTextSize(11); UiStyle.applyText(h2,UiStyle.TEXT_3);
+        brand.addView(h1); brand.addView(h2); header.addView(brand,new LinearLayout.LayoutParams(0,-2,1f));
+        TextView ver=new TextView(this); ver.setText("v"+Updater.myVersionName(this)); ver.setTextSize(11); ver.setGravity(Gravity.CENTER);
+        ver.setPadding(dp(10),dp(5),dp(10),dp(5)); ver.setBackground(UiStyle.button(this,0xFF233734)); UiStyle.applyText(ver,UiStyle.ACCENT);
+        header.addView(ver,new LinearLayout.LayoutParams(-2,-2));
         LinearLayout hwrap=new LinearLayout(this); hwrap.setOrientation(LinearLayout.VERTICAL);
-        hwrap.setPadding(dp(14),dp(10),dp(14),dp(6));
+        hwrap.setPadding(dp(12),dp(10),dp(12),0);
         hwrap.addView(header,new LinearLayout.LayoutParams(-1,-2));
         root.addView(hwrap);
 
         LinearLayout tabs=new LinearLayout(this); tabs.setOrientation(LinearLayout.HORIZONTAL);
-        tabs.setPadding(dp(12),dp(10),dp(12),dp(6));
-        tabWeb=tab("🏠 首页"); tabApps=tab("📱 应用"); tabSet=tab("⚙️ 设置");
+        tabs.setPadding(dp(12),dp(8),dp(12),dp(6));
+        tabWeb=tab("首页"); tabApps=tab("应用"); tabSet=tab("设置");
         tabWeb.setOnClickListener(new View.OnClickListener(){public void onClick(View v){selectTab(0);}});
         tabApps.setOnClickListener(new View.OnClickListener(){public void onClick(View v){selectTab(1);buildApps();}});
         tabSet.setOnClickListener(new View.OnClickListener(){public void onClick(View v){selectTab(2);}});
@@ -230,8 +212,11 @@ public class MainActivity extends Activity {
         TextView hl=new TextView(this); hl.setText("🕘 最近打开"); hl.setTextColor(0xCCFFFFFF); hl.setTextSize(12);
         histCard.addView(hl);
         histRow=new LinearLayout(this); histRow.setOrientation(LinearLayout.HORIZONTAL);
-        histRow.setPadding(0,dp(6),0,0);
-        histCard.addView(histRow);
+        histRow.setPadding(0,dp(6),0,dp(2));
+        android.widget.HorizontalScrollView histScroll=new android.widget.HorizontalScrollView(this);
+        histScroll.setHorizontalScrollBarEnabled(false); histScroll.setFillViewport(false);
+        histScroll.addView(histRow,new android.widget.HorizontalScrollView.LayoutParams(-2,-2));
+        histCard.addView(histScroll);
         refreshHist();
         LinearLayout.LayoutParams hclp=new LinearLayout.LayoutParams(-1,-2); hclp.topMargin=dp(10);
         histCard.setLayoutParams(hclp);
@@ -276,10 +261,10 @@ public class MainActivity extends Activity {
         sv.addView(appsList);
         sv.setOverScrollMode(View.OVER_SCROLL_NEVER);
         appSearch=new EditText(this);
-        appSearch.setHint("\uD83D\uDD0D 搜索应用（名称 / 包名）");
-        appSearch.setTextSize(14); appSearch.setSingleLine(true); appSearch.setTextColor(Color.WHITE);
-        appSearch.setHintTextColor(0xAAFFFFFF);
-        appSearch.setBackground(shp(12,0x66000000)); appSearch.setPadding(dp(12),dp(10),dp(12),dp(10));
+        appSearch.setHint("搜索应用名称或包名");
+        appSearch.setTextSize(14); appSearch.setSingleLine(true); UiStyle.applyText(appSearch,UiStyle.TEXT);
+        appSearch.setHintTextColor(UiStyle.TEXT_3);
+        appSearch.setBackground(UiStyle.field(this)); appSearch.setPadding(dp(12),dp(10),dp(12),dp(10));
         final Btn clearBtn=gbtn("✕",shp(12,0x33888888),new View.OnClickListener(){public void onClick(View v){ appSearch.setText(""); }});
         clearBtn.setTextSize(14);
         final android.widget.LinearLayout.LayoutParams cblp=new android.widget.LinearLayout.LayoutParams(dp(46),dp(40));
@@ -330,38 +315,41 @@ public class MainActivity extends Activity {
         // 设置页改为首次切入时才构建(懒加载)，显著加快冷启动
     }
 
-    TextView tab(String s){ TextView t=new TextView(this); t.setText(s); t.setTextSize(15); t.setGravity(Gravity.CENTER); t.setTextColor(Color.WHITE); t.setBackground(glass()); liquidFx(t); return t; }
+    TextView tab(String s){ TextView t=new TextView(this); t.setText(s); t.setTextSize(14); t.setGravity(Gravity.CENTER); UiStyle.applyText(t,UiStyle.TEXT_2); t.setBackground(UiStyle.idleSegment(this)); liquidFx(t); return t; }
 
     LinearLayout cardWeb(){
-        LinearLayout c=new LinearLayout(this); c.setOrientation(LinearLayout.VERTICAL); c.setPadding(dp(16),dp(16),dp(16),dp(16));
-        c.setBackground(glass());
-        urlInput=new EditText(this); urlInput.setHint("输入网址，如 www.bilibili.com");
+        LinearLayout c=new LinearLayout(this); c.setOrientation(LinearLayout.VERTICAL); c.setPadding(dp(14),dp(14),dp(14),dp(14));
+        c.setBackground(UiStyle.panel(this));
+        TextView title=new TextView(this); title.setText("打开链接"); title.setTextSize(14); title.setTypeface(Fonts.nerd(this),Typeface.BOLD); UiStyle.applyText(title,UiStyle.TEXT);
+        TextView subtitle=new TextView(this); subtitle.setText("输入地址后选择打开方式或执行设备操作"); subtitle.setTextSize(11); UiStyle.applyText(subtitle,UiStyle.TEXT_3);
+        c.addView(title); c.addView(subtitle); c.addView(gap(10));
+        urlInput=new EditText(this); urlInput.setHint("https://example.com");
         urlInput.setTextSize(15); urlInput.setSingleLine(true); urlInput.setPadding(dp(12),dp(10),dp(12),dp(10));
-        urlInput.setBackground(shp(12,0x66000000)); urlInput.setTextColor(Color.WHITE); urlInput.setHintTextColor(0xAAFFFFFF);
+        urlInput.setBackground(UiStyle.field(this)); UiStyle.applyText(urlInput,UiStyle.TEXT); urlInput.setHintTextColor(UiStyle.TEXT_3);
         c.addView(urlInput);
         c.addView(gap(10));
         LinearLayout r=new LinearLayout(this); r.setOrientation(LinearLayout.HORIZONTAL);
-        r.addView(gbtn("📋 粘贴",grad(14,new int[]{0xFF8E9EAB,0xFF64748B}),new View.OnClickListener(){public void onClick(View v){paste();}}),new LinearLayout.LayoutParams(0,-2,1f));
-        r.addView(sp(10));
-        r.addView(gbtn("🌐 智能浏览器",grad(14,new int[]{0xFF4CAF50,0xFF2E7D32}),new View.OnClickListener(){public void onClick(View v){openWeb(urlInput.getText().toString().trim());}}),new LinearLayout.LayoutParams(0,-2,1f));
+        r.addView(gbtn("粘贴",UiStyle.button(this,UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){paste();}}),new LinearLayout.LayoutParams(0,-2,1f));
+        r.addView(sp(8));
+        r.addView(gbtn("智能浏览器",UiStyle.primaryButton(this),new View.OnClickListener(){public void onClick(View v){openWeb(urlInput.getText().toString().trim());}}),new LinearLayout.LayoutParams(0,-2,1f));
         c.addView(r);
         c.addView(gap(12));
-        c.addView(gbtn("🔓 一键开网（重启后点一次）",grad(14,new int[]{0xFF10B981,0xFF059669}),new View.OnClickListener(){public void onClick(View v){doOpenNet();}}));
-        c.addView(gap(10));
-        c.addView(gbtn("🔧 一键打开 ADB / USB 调试",grad(14,new int[]{0xFFF59E0B,0xFFD97706}),new View.OnClickListener(){public void onClick(View v){openAdb();}}));
-        c.addView(gap(10));
-        c.addView(gbtn("🌐 检测：能否连白名单外网站(B站等)",grad(14,new int[]{0xFFA78BFA,0xFF7C3AED}),new View.OnClickListener(){public void onClick(View v){runNetDetect();}}));
-        netResult=new TextView(this); netResult.setText("未检测 · 点上方按钮实测连接"); netResult.setTextColor(0xDDFFFFFF); netResult.setTextSize(13);
+        c.addView(gbtn("一键开网",UiStyle.primaryButton(this),new View.OnClickListener(){public void onClick(View v){doOpenNet();}}));
+        c.addView(gap(8));
+        c.addView(gbtn("打开 ADB / USB 调试",UiStyle.button(this,UiStyle.AMBER_DARK),new View.OnClickListener(){public void onClick(View v){openAdb();}}));
+        c.addView(gap(8));
+        c.addView(gbtn("检测外网连接",UiStyle.button(this,0xFF28546A),new View.OnClickListener(){public void onClick(View v){runNetDetect();}}));
+        netResult=new TextView(this); netResult.setText("尚未检测"); UiStyle.applyText(netResult,UiStyle.TEXT_2); netResult.setTextSize(12);
         netResult.setPadding(dp(4),dp(10),dp(4),0);
         c.addView(netResult);
         c.addView(gap(10));
-        c.addView(gbtn("🧹 一键清理后台（当前/系统/浏览器不杀）",grad(14,new int[]{0xFF38BDF8,0xFF0369A1}),new View.OnClickListener(){public void onClick(View v){doClearBg();}}));
+        c.addView(gbtn("清理后台进程",UiStyle.button(this,0xFF38474B),new View.OnClickListener(){public void onClick(View v){doClearBg();}}));
         return c;
     }
-    GradientDrawable shp(int r,int c){ GradientDrawable g=new GradientDrawable(); g.setCornerRadius(dp(r)); g.setColor(c); return g; }
-    GradientDrawable grad(int r,int[] cs){ GradientDrawable g=new GradientDrawable(GradientDrawable.Orientation.TL_BR,cs); g.setCornerRadius(dp(r)); g.setStroke(dp(1),0x66FFFFFF); return g; }
+    GradientDrawable shp(int r,int c){ GradientDrawable g=new GradientDrawable(); g.setCornerRadius(dp(Math.min(8,r))); g.setColor(c); g.setStroke(Math.max(1,dp(1)),UiStyle.STROKE_SOFT); return g; }
+    GradientDrawable grad(int r,int[] cs){ GradientDrawable g=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,cs); g.setCornerRadius(dp(Math.min(8,r))); g.setStroke(dp(1),0x5542C8A5); return g; }
 
-    Btn gbtn(String t,Drawable bg,View.OnClickListener l){ Btn b=new Btn(this); b.setText(t); b.setTextColor(Color.WHITE); b.setTextSize(15); b.setAllCaps(false); Fonts.apply(b);
+    Btn gbtn(String t,Drawable bg,View.OnClickListener l){ Btn b=new Btn(this); b.setText(t); b.setTextSize(14); b.setAllCaps(false); b.setMinHeight(dp(48)); UiStyle.applyText(b,UiStyle.TEXT);
         b.setBackground(bg); b.setPadding(dp(12),dp(13),dp(12),dp(13)); b.setOnClickListener(l);
         liquidFx(b);
         return b; }
@@ -521,12 +509,12 @@ public class MainActivity extends Activity {
         TextView tip=new TextView(this); tip.setText("想了解版本、开发者与功能？点顶部「📄 关于本应用」"); tip.setTextSize(12); tip.setTextColor(0xBBFFFFFF); tip.setPadding(dp(8),dp(4),dp(8),dp(6));
         settingsBody.addView(tip);
     }
-    TextView secTitle(String s){ TextView t=new TextView(this); t.setText(s); t.setTextSize(13); t.setTextColor(0xCCFFFFFF); Fonts.apply(t); t.setPadding(dp(4),dp(6),dp(4),dp(4)); return t; }
-    Btn secOpt(String label,final Runnable act){ Btn b=new Btn(this); b.setText(label); b.setTextColor(Color.WHITE); b.setTextSize(14); b.setAllCaps(false);
-        b.setGravity(Gravity.LEFT|Gravity.CENTER_VERTICAL); b.setPadding(dp(14),dp(12),dp(14),dp(12)); b.setBackground(glass()); Fonts.apply(b);
+    TextView secTitle(String s){ TextView t=new TextView(this); t.setText(s); t.setTextSize(12); t.setAllCaps(false); UiStyle.applyText(t,UiStyle.ACCENT); t.setPadding(dp(4),dp(12),dp(4),dp(6)); return t; }
+    Btn secOpt(String label,final Runnable act){ Btn b=new Btn(this); b.setText(label); b.setTextSize(14); b.setAllCaps(false);
+        b.setMinHeight(dp(48)); b.setGravity(Gravity.START|Gravity.CENTER_VERTICAL); b.setPadding(dp(14),dp(10),dp(14),dp(10)); b.setBackground(UiStyle.panel(this,UiStyle.SURFACE)); UiStyle.applyText(b,UiStyle.TEXT);
         b.setOnClickListener(new View.OnClickListener(){public void onClick(View v){act.run();}});
         liquidFx(b);
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.bottomMargin=dp(6); b.setLayoutParams(lp); return b; }
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.bottomMargin=dp(5); b.setLayoutParams(lp); return b; }
 
 
     void openAbout(){ try{ com.helper.urlfeeder.FloatBallService.collapseMenu(); }catch(Exception e){} if(aboutPage==null) buildAbout(); try{ aboutPage.bringToFront(); }catch(Exception e){} aboutPage.setVisibility(View.VISIBLE); }
@@ -542,7 +530,7 @@ public class MainActivity extends Activity {
     void buildCheck(){
         if(rootF==null) return;
         checkPage=new FrameLayout(this);
-        checkPage.setBackground(gradBg(new int[]{0xFF0E1428,0xFF1B2345,0xFF101736}));
+        checkPage.setBackground(UiStyle.appBackground());
         // 内容放滚动容器，避免超高/与状态栏挤压
         ScrollView csv=new ScrollView(this); csv.setSmoothScrollingEnabled(true);
         checkPage.addView(csv,new FrameLayout.LayoutParams(-1,-1));
@@ -658,7 +646,7 @@ public class MainActivity extends Activity {
     void buildAbout(){
         if(rootF==null) return;
         aboutPage=new FrameLayout(this);
-        aboutPage.setBackground(gradBg(new int[]{0xFF0E1428,0xFF1B2345,0xFF101736}));
+        aboutPage.setBackground(UiStyle.appBackground());
         final LinearLayout body=new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
         final int fallbackTop=(content!=null&&content.getPaddingTop()>0)?content.getPaddingTop()+dp(4):dp(18);
         body.setPadding(dp(18),fallbackTop,dp(18),dp(14));
@@ -733,9 +721,12 @@ public class MainActivity extends Activity {
     void selectTab(int idx){
         curTab=idx;
         if(idx==2&&settingsBody!=null&&settingsBody.getChildCount()==0){ buildSettings(); }
-        tabWeb.setBackground(idx==0?grad(22,new int[]{0xFF4F8DFF,0xFF6C5CE7}):glass());
-        tabApps.setBackground(idx==1?grad(22,new int[]{0xFF4F8DFF,0xFF6C5CE7}):glass());
-        tabSet.setBackground(idx==2?grad(22,new int[]{0xFF4F8DFF,0xFF6C5CE7}):glass());
+        tabWeb.setBackground(idx==0?UiStyle.activeSegment(this):UiStyle.idleSegment(this));
+        tabApps.setBackground(idx==1?UiStyle.activeSegment(this):UiStyle.idleSegment(this));
+        tabSet.setBackground(idx==2?UiStyle.activeSegment(this):UiStyle.idleSegment(this));
+        tabWeb.setTextColor(idx==0?UiStyle.ACCENT:UiStyle.TEXT_2);
+        tabApps.setTextColor(idx==1?UiStyle.ACCENT:UiStyle.TEXT_2);
+        tabSet.setTextColor(idx==2?UiStyle.ACCENT:UiStyle.TEXT_2);
         webScroll.setVisibility(idx==0?View.VISIBLE:View.GONE);
         pageWeb.setVisibility(idx==0?View.VISIBLE:View.GONE);
         pageApps.setVisibility(idx==1?View.VISIBLE:View.GONE);
@@ -770,10 +761,10 @@ public class MainActivity extends Activity {
         int s=prefs.getInt("bg",0);
         bgWall.setVisibility(View.GONE);
         if(dim!=null) dim.setVisibility(View.GONE);
-        if(s==3){ content.setBackground(null); wallpaperBackdrop(); }
-        else if(s==0) content.setBackground(gradBg(new int[]{0xFF2B3A67,0xFF574B90,0xFF4B2E83}));
-        else if(s==1) content.setBackground(gradBg(new int[]{0xFF0F766E,0xFF14B8A6,0xFF0EA5E9}));
-        else content.setBackground(gradBg(new int[]{0xFF0F172A,0xFF1E3A8A,0xFF172554}));
+        if(s==3){ content.setBackground(UiStyle.appBackground()); wallpaperBackdrop(); }
+        else if(s==1) content.setBackground(gradBg(new int[]{0xFF0A1717,0xFF112622,0xFF0E1A1C}));
+        else if(s==2) content.setBackground(gradBg(new int[]{0xFF0A1017,0xFF142331,0xFF10191F}));
+        else content.setBackground(UiStyle.appBackground());
     }
     void wallpaperBackdrop(){
         try{
@@ -792,7 +783,7 @@ public class MainActivity extends Activity {
                 catch(Throwable ignored){}
             }
             bgWall.setVisibility(View.VISIBLE);
-            if(dim==null){ dim=new View(this); rootF.addView(dim,new FrameLayout.LayoutParams(-1,-1)); }
+            if(dim==null){ dim=new View(this); rootF.addView(dim,1,new FrameLayout.LayoutParams(-1,-1)); }
             dim.setBackgroundColor(0x55000000); dim.setVisibility(View.VISIBLE);
         }catch(Throwable e){ toast("壁纸背景不可用"); }
     }
@@ -1523,7 +1514,7 @@ public class MainActivity extends Activity {
             et.setHint("自定义名称（留空用应用原名）");
             et.setText(defLabel);
             et.setTextSize(15); et.setTextColor(Color.WHITE); et.setHintTextColor(0xAAFFFFFF);
-            et.setBackground(shp(12,0x66000000)); et.setPadding(dp(12),dp(8),dp(12),dp(8));
+            et.setBackground(UiStyle.field(this)); et.setPadding(dp(12),dp(8),dp(12),dp(8));
             LinearLayout host=new LinearLayout(this); host.setOrientation(LinearLayout.VERTICAL);
             host.setPadding(dp(2),dp(8),dp(2),0);
             host.addView(et,new LinearLayout.LayoutParams(-1,-2));
@@ -1553,8 +1544,8 @@ public class MainActivity extends Activity {
             d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
             if(d.getWindow()!=null){ d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000)); d.getWindow().setDimAmount(0.35f); }
             LinearLayout p=new LinearLayout(this); p.setOrientation(LinearLayout.VERTICAL);
-            GradientDrawable gd=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xF2253160,0xF2121A40});
-            gd.setCornerRadius(dp(24)); gd.setStroke(dp(1),0x66FFFFFF);
+            GradientDrawable gd=UiStyle.panel(this,0xFA151F21);
+            gd.setCornerRadius(dp(8)); gd.setStroke(dp(1),UiStyle.STROKE);
             p.setBackground(gd); p.setPadding(dp(18),dp(16),dp(18),dp(14));
             TextView tt=new TextView(this); tt.setText("选择要加入悬浮球菜单的应用"); tt.setTextColor(Color.WHITE); tt.setTextSize(16); tt.setTypeface(null,Typeface.BOLD);
             p.addView(tt);
@@ -1777,13 +1768,13 @@ public class MainActivity extends Activity {
         Log.i("AppsPage","rendered "+shown+" rows in "+(System.currentTimeMillis()-t0)+"ms");
     }
     void addAppRow(final AppEntry e,int idx){
-        LinearLayout row=new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(10),dp(8),dp(10),dp(8)); row.setBackground(glass());
+             LinearLayout row=new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12),dp(9),dp(10),dp(9)); row.setBackground(UiStyle.panel(this,idx%2==0?UiStyle.SURFACE:UiStyle.SURFACE_2));
         ImageView iv=new ImageView(this); if(e.icon!=null) iv.setImageDrawable(e.icon);
         row.addView(iv,new LinearLayout.LayoutParams(dp(44),dp(44)));
         LinearLayout tx=new LinearLayout(this); tx.setOrientation(LinearLayout.VERTICAL); tx.setPadding(dp(10),0,0,0);
-        TextView nn=new TextView(this); nn.setText(e.label); nn.setTextColor(Color.WHITE); nn.setTextSize(15); nn.setTypeface(null,Typeface.BOLD);
-        TextView pp=new TextView(this); pp.setText(e.pkg); pp.setTextColor(0x99FFFFFF); pp.setTextSize(11);
+        TextView nn=new TextView(this); nn.setText(e.label); nn.setTextSize(15); nn.setTypeface(null,Typeface.BOLD); nn.setSingleLine(true); nn.setEllipsize(android.text.TextUtils.TruncateAt.END); UiStyle.applyText(nn,UiStyle.TEXT);
+        TextView pp=new TextView(this); pp.setText(e.pkg); pp.setTextSize(11); pp.setSingleLine(true); pp.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE); UiStyle.applyText(pp,UiStyle.TEXT_3);
         tx.addView(nn); tx.addView(pp);
         row.addView(tx,new LinearLayout.LayoutParams(0,-2,1f));
         row.setOnClickListener(new View.OnClickListener(){public void onClick(View v){launch(e);}});
@@ -1860,7 +1851,7 @@ public class MainActivity extends Activity {
             final java.util.List<String[]> list=customList();
             final EditText et=new EditText(this);
             et.setText(oldName); et.setTextSize(15); et.setTextColor(Color.WHITE);
-            et.setBackground(shp(12,0x66000000)); et.setPadding(dp(12),dp(8),dp(12),dp(8));
+            et.setBackground(UiStyle.field(this)); et.setPadding(dp(12),dp(8),dp(12),dp(8));
             LinearLayout host=new LinearLayout(this); host.setOrientation(LinearLayout.VERTICAL);
             host.setPadding(dp(2),dp(8),dp(2),0);
             host.addView(et,new LinearLayout.LayoutParams(-1,-2));
@@ -2050,8 +2041,8 @@ public class MainActivity extends Activity {
             d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
             if(d.getWindow()!=null){ d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000)); d.getWindow().setDimAmount(0.35f); }
             LinearLayout p=new LinearLayout(this); p.setOrientation(LinearLayout.VERTICAL);
-            GradientDrawable gd=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xF2253160,0xF2121A40});
-            gd.setCornerRadius(dp(26)); gd.setStroke(dp(1),0x66FFFFFF);
+            GradientDrawable gd=UiStyle.panel(this,0xFA151F21);
+            gd.setCornerRadius(dp(8)); gd.setStroke(dp(1),UiStyle.STROKE);
             p.setBackground(gd); p.setPadding(dp(24),dp(22),dp(24),dp(16));
             ImageView ic=new ImageView(this); if(e.icon!=null) ic.setImageDrawable(e.icon);
             LinearLayout.LayoutParams ilp=new LinearLayout.LayoutParams(dp(62),dp(62)); ilp.gravity=Gravity.CENTER_HORIZONTAL;
@@ -2069,7 +2060,7 @@ public class MainActivity extends Activity {
             meta(p,"入口",e.act);
             LinearLayout btns=new LinearLayout(this); btns.setOrientation(LinearLayout.HORIZONTAL);
             LinearLayout.LayoutParams blp=new LinearLayout.LayoutParams(-1,-2); blp.topMargin=dp(16);
-            Btn open=gbtn("🚀 打开",grad(14,new int[]{0xFF4F8DFF,0xFF6C5CE7}),new View.OnClickListener(){public void onClick(View v){ d.dismiss(); launch(e); }});
+            Btn open=gbtn("打开",UiStyle.primaryButton(this),new View.OnClickListener(){public void onClick(View v){ d.dismiss(); launch(e); }});
             Btn del=gbtn("🗑 卸载",grad(14,new int[]{0xFFEF4444,0xFFB91C1C}),new View.OnClickListener(){public void onClick(View v){ d.dismiss(); uninstallApp(e); }});
             Btn close=gbtn("关闭",glass(),new View.OnClickListener(){public void onClick(View v){ d.dismiss(); }});
             btns.addView(open,new LinearLayout.LayoutParams(0,-2,1f));

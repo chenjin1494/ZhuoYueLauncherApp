@@ -108,7 +108,7 @@ public class FloatBallService extends Service {
         ball.setOrientation(LinearLayout.VERTICAL);
         ball.setGravity(Gravity.CENTER);
         ballTv=new TextView(this);
-        ballTv.setText("◉");
+        ballTv.setText("◆");
         ballTv.setTextColor(0xFFFFFFFF);
         ball.addView(ballTv);
         ballLp=new WindowManager.LayoutParams(
@@ -207,7 +207,7 @@ public class FloatBallService extends Service {
         // 透明拦截屏: 放在球之上、盘之下 → 盘外点击只收起菜单, 不会误触到下层应用按钮
         try{
             scrim=new LinearLayout(this);
-            scrim.setBackgroundColor(0x00000000);
+            scrim.setBackgroundColor(0x26000000);
             scrimLp=new WindowManager.LayoutParams(
                 w,h,
                 Build.VERSION.SDK_INT>=26?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE,
@@ -332,8 +332,8 @@ public class FloatBallService extends Service {
         GradientDrawable g=new GradientDrawable();
         g.setShape(GradientDrawable.OVAL);
         g.setOrientation(GradientDrawable.Orientation.TL_BR);
-        g.setColors(new int[]{0xFFC7D9FF,0xFF5276DB,0xFF162A63});
-        g.setStroke(Math.max(1,dp(1)),0xE6FFFFFF);
+        g.setColors(new int[]{0xFF44635E,0xFF1E3D39,0xFF0C1919});
+        g.setStroke(Math.max(1,dp(1)),0xCC74E0C2);
         return g;
     }
     // 应用当前 pref 到球体外观(尺寸/渐变/描边/图标字号)
@@ -343,19 +343,24 @@ public class FloatBallService extends Service {
         ballLp.width=ballSz; ballLp.height=ballSz;
         if(ballTv!=null){
             ballTv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,ballSz*0.42f);
-            ballTv.setShadowLayer(Math.max(2,ballSz*0.03f),0,Math.max(1,ballSz*0.02f),0xB0000000);
+            ballTv.setShadowLayer(Math.max(1,ballSz*0.02f),0,Math.max(1,ballSz*0.015f),0x80000000);
         }
         ball.setBackground(makeOrb());
+        if(Build.VERSION.SDK_INT>=21) ball.setElevation(dp(6));
     }
 
-    // 新建中央圆盘容器: 半透明黑圆底 + 内白描边
-    FrameLayout newMenuView(){
-        FrameLayout m=new FrameLayout(this);
+    GradientDrawable makeDiscBackground(){
         GradientDrawable bg=new GradientDrawable();
         bg.setShape(GradientDrawable.OVAL);
-        bg.setColor(0xA6000000);              // 黑色半透明
-        bg.setStroke(Math.max(1,dp(1)),0x40FFFFFF);
-        m.setBackground(bg);
+        bg.setColor(0xEB11191B);
+        bg.setStroke(Math.max(1,dp(1)),0x88516E70);
+        return bg;
+    }
+
+    // 新建中央圆盘容器: 稳定高对比石墨圆盘
+    FrameLayout newMenuView(){
+        FrameLayout m=new FrameLayout(this);
+        m.setBackground(makeDiscBackground());
         m.setVisibility(View.GONE);
         // 点圆盘以外自动收起
         m.setOnTouchListener(new View.OnTouchListener(){
@@ -551,8 +556,8 @@ public class FloatBallService extends Service {
         int dq=discSize(); int cx=dq/2, cy=dq/2;
         int[] ring=ringFor(n); int itemD=ring[0], R=ring[1];
         decorateDisc(menu,n,itemD,R);   // 盘心光环+扇区分隔线(美化分层)
-        int tw=labelBoxW(itemD,R,n), th=(int)(itemD*1.5f);
-        int bias=dp(12);                                  // 内容沿半径外移, 避免压到盘心圆
+        int tw=labelBoxW(itemD,R,n), th=itemD+dp(20);
+        int bias=dp(6);
         for(int i=0;i<n;i++){
             double a=Math.toRadians(-90.0+360.0*i/n);   // 从顶部开始顺时针
             int px=cx+(int)Math.round((R+bias)*Math.cos(a))-tw/2;
@@ -587,13 +592,13 @@ public class FloatBallService extends Service {
             int innerEdge=R-itemD/2;                 // 项内缘
             // 1) "中间的圆": 从盘心铺到项内缘的柔和浅圈 + 外描边
             int hubR=Math.max(dp(10),innerEdge-dp(12));
-            View hv=circleView(hubR*2,0x18FFFFFF,0x4DFFFFFF);
+            View hv=circleView(hubR*2,0x183FC8A5,0x9942C8A5);
             FrameLayout.LayoutParams hlp=new FrameLayout.LayoutParams(hubR*2,hubR*2);
             hlp.leftMargin=cx-hubR; hlp.topMargin=cx-hubR;
             host.addView(hv,hlp);
             // 2) 周围区域外沿细环
             int outerEdge=dq/2-dp(4);
-            View rim=circleView(outerEdge*2,0x00000000,0x30FFFFFF);
+            View rim=circleView(outerEdge*2,0x00000000,0x40516E70);
             FrameLayout.LayoutParams rlp=new FrameLayout.LayoutParams(outerEdge*2,outerEdge*2);
             rlp.leftMargin=cx-outerEdge; rlp.topMargin=cx-outerEdge;
             host.addView(rim,rlp);
@@ -625,7 +630,7 @@ public class FloatBallService extends Service {
             int px=cx+(int)Math.round(rmid*Math.cos(a));
             int py=cx+(int)Math.round(rmid*Math.sin(a));
             View ln=new View(this);
-            ln.setBackgroundColor(0x38FFFFFF);
+            ln.setBackgroundColor(0x2842C8A5);
             int w=dp(1);
             FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(w,len);
             lp.leftMargin=px-w/2; lp.topMargin=py-len/2;
@@ -643,16 +648,18 @@ public class FloatBallService extends Service {
             // 盘心按钮保留白色圆底(作为"中间的圆"的中心)
             GradientDrawable bg=new GradientDrawable();
             bg.setShape(GradientDrawable.OVAL);
-            bg.setColor(0xE6FFFFFF);
-            bg.setStroke(dp(1),0xFFFFFFFF);
+            bg.setColor(0xF2213432);
+            bg.setStroke(dp(1),0xFF42C8A5);
             t.setBackground(bg);
         }else{
             t.setBackground(null);   // 去掉功能项外面的白色圆底
         }
+        t.setContentDescription(label);
         TextView tv=new TextView(this);
         tv.setText(p[0]);
-        tv.setTextColor(center?0xFF1A1A1A:0xFFFFFFFF);
-        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,d*(center?0.36f:0.48f));   // 图标按直径比例放大
+        tv.setTextColor(center?0xFFF2F6F5:0xFFF2F6F5);
+        int iconPx=Math.max(dp(22),Math.min(dp(32),(int)(d*(center?0.34f:0.44f))));
+        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,iconPx);
         tv.setGravity(Gravity.CENTER);
         tv.setIncludeFontPadding(false);
         Fonts.apply(tv);
@@ -661,10 +668,11 @@ public class FloatBallService extends Service {
         if(p[1]!=null&&p[1].length()>0){
             TextView nv=new TextView(this);
             nv.setText(p[1]);
-            nv.setTextColor(center?0xE6000000:0xFFEDF3FF);
-            nv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,d*(center?0.19f:0.22f));  // 名称同步放大
+            nv.setTextColor(center?0xFFBDEBDF:0xFFD2DFDC);
+            int namePx=Math.max(dp(11),Math.min(dp(14),(int)(d*(center?0.18f:0.20f))));
+            nv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,namePx);
             nv.setGravity(Gravity.CENTER);
-            nv.setMaxLines(1); nv.setIncludeFontPadding(false);
+            nv.setMaxLines(1); nv.setSingleLine(true); nv.setIncludeFontPadding(false);
             nv.setMaxWidth((int)(d*(center?1.0f:1.9f)));
             nv.setEllipsize(android.text.TextUtils.TruncateAt.END);
             Fonts.apply(nv);
@@ -878,11 +886,7 @@ public class FloatBallService extends Service {
     void createAppsSubWindow(){
         try{
             FrameLayout m=new FrameLayout(this);
-            GradientDrawable bg=new GradientDrawable();
-            bg.setShape(GradientDrawable.OVAL);
-            bg.setColor(0xA6000000);              // 与主轮盘同款: 黑色半透明
-            bg.setStroke(Math.max(1,dp(1)),0x40FFFFFF);
-            m.setBackground(bg);
+            m.setBackground(makeDiscBackground());
             m.setVisibility(View.GONE);
             // 点盘外/四角收起(点悬浮球瞬间交给球处理)
             m.setOnTouchListener(new View.OnTouchListener(){
@@ -958,8 +962,8 @@ public class FloatBallService extends Service {
             // 应用真实图标围成一圈
             final Runnable[] acts=new Runnable[n];
             final Runnable[] longActs=new Runnable[n];
-            int tw2=labelBoxW(itemD,R,n), th2=(int)(itemD*1.7f);
-            int bias2=dp(12);
+            int tw2=labelBoxW(itemD,R,n), th2=itemD+dp(20);
+            int bias2=dp(6);
             for(int i=0;i<n;i++){
                 double ang=Math.toRadians(-90.0+360.0*i/n);
                 int px=cx+(int)Math.round((R+bias2)*Math.cos(ang))-tw2/2;
@@ -1055,18 +1059,19 @@ public class FloatBallService extends Service {
         t.setOrientation(LinearLayout.VERTICAL);
         t.setGravity(Gravity.CENTER);
         t.setBackground(null);        // 不要白色圆底, 图标直接浮在盘面
+        t.setContentDescription(a[0]);
         ImageView iv=new ImageView(this);
-        int is=(int)(d*0.74f);
+        int is=(int)(d*0.64f);
         android.graphics.drawable.Drawable ic=null;
         try{ ic=getPackageManager().getApplicationIcon(a[1]); }catch(Exception e){}
         if(ic!=null) iv.setImageDrawable(ic);
         else{ iv.setBackground(makeOrb()); }
         t.addView(iv,new LinearLayout.LayoutParams(is,is));
         TextView nv=new TextView(this);
-        nv.setText(a[0]); nv.setTextColor(0xFFEDF3FF);
-        nv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,d*0.22f);
+        nv.setText(a[0]); nv.setTextColor(0xFFD2DFDC);
+        nv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,Math.max(dp(11),Math.min(dp(14),(int)(d*0.20f))));
         nv.setGravity(Gravity.CENTER);
-        nv.setMaxLines(1); nv.setMaxWidth((int)(d*1.9f));
+        nv.setMaxLines(1); nv.setSingleLine(true); nv.setMaxWidth((int)(d*1.9f));
         nv.setEllipsize(android.text.TextUtils.TruncateAt.END);
         nv.setIncludeFontPadding(false);
         Fonts.apply(nv);

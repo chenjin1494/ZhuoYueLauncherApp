@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">#0B1113</item>
+        <item name="android:colorAccent">#42C8A5</item>
+        <item name="android:navigationBarColor">#0B1113</item>
+        <item name="android:statusBarColor">#0B1113</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+
     <!-- 截图授权用的透明页: 无启动预览窗口、无窗口/转场动画、完全透明 -->
     <style name="ShotTheme" parent="@android:style/Theme.Translucent.NoTitleBar">
         <item name="android:windowBackground">@android:color/transparent</item>

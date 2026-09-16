@@ -51,7 +51,7 @@ public class RulesActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences(PREFS, 0);
-        getWindow().setStatusBarColor(0xFF15181C);
+        UiStyle.systemBars(this);
         buildUi();
         refreshRules(true);
     }
@@ -64,29 +64,29 @@ public class RulesActivity extends Activity {
     private void buildUi() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(0xFFF4F5F6);
+        root.setBackground(UiStyle.appBackground());
 
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(8), dp(7), dp(8), dp(7));
-        bar.setBackgroundColor(0xFF202429);
+        bar.setPadding(dp(10), dp(8), dp(10), dp(8));
+        bar.setBackgroundColor(UiStyle.BG_TOP);
         TextView back = action("‹", "返回", new View.OnClickListener() {
             public void onClick(View v) { finish(); }
         });
-        TextView title = text("防火墙规则", 17, 0xFFF4F6F8);
+        TextView title = text("规则管理", 18, UiStyle.TEXT);
         title.setGravity(Gravity.CENTER_VERTICAL);
         title.setPadding(dp(7), 0, 0, 0);
         TextView refresh = action("↻", "刷新规则", new View.OnClickListener() {
             public void onClick(View v) { refreshRules(false); }
         });
-        bar.addView(back, lp(dp(42), dp(40)));
-        bar.addView(title, new LinearLayout.LayoutParams(0, dp(40), 1));
-        bar.addView(refresh, lp(dp(42), dp(40)));
+        bar.addView(back, lp(dp(48), dp(48)));
+        bar.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1));
+        bar.addView(refresh, lp(dp(48), dp(48)));
         root.addView(bar, lp(-1, -2));
 
-        warning = text("", 12, 0xFF6F4200);
-        warning.setPadding(dp(12), dp(8), dp(12), dp(8));
-        warning.setBackgroundColor(0xFFFFE8B7);
+        warning = text("", 12, UiStyle.AMBER);
+        warning.setPadding(dp(12), dp(9), dp(12), dp(9));
+        warning.setBackground(UiStyle.button(this,0xFF332817));
         root.addView(warning, lp(-1, -2));
 
         LinearLayout addRow = new LinearLayout(this);
@@ -97,19 +97,20 @@ public class RulesActivity extends Activity {
         input.setTextSize(14);
         input.setHint("IP 或主机名");
         input.setPadding(dp(10), 0, dp(10), 0);
-        input.setBackground(fieldBackground());
+        input.setTextColor(UiStyle.TEXT); input.setHintTextColor(UiStyle.TEXT_3);
+        input.setBackground(UiStyle.field(this));
         Fonts.apply(input);
-        addRow.addView(input, new LinearLayout.LayoutParams(0, dp(42), 1));
+        addRow.addView(input, new LinearLayout.LayoutParams(0, dp(48), 1));
         TextView addBlack = compactButton("加入黑名单", 0xFFB53C3C, new View.OnClickListener() {
             public void onClick(View v) { addRule(true); }
         });
-        LinearLayout.LayoutParams abp = lp(-2, dp(42));
+        LinearLayout.LayoutParams abp = lp(-2, dp(48));
         abp.leftMargin = dp(6);
         addRow.addView(addBlack, abp);
         TextView addWhite = compactButton("加入白名单", 0xFF28704B, new View.OnClickListener() {
             public void onClick(View v) { addRule(false); }
         });
-        LinearLayout.LayoutParams awp = lp(-2, dp(42));
+        LinearLayout.LayoutParams awp = lp(-2, dp(48));
         awp.leftMargin = dp(6);
         addRow.addView(addWhite, awp);
         root.addView(addRow, lp(-1, -2));
@@ -119,22 +120,22 @@ public class RulesActivity extends Activity {
         restoreButton = compactButton("恢复快照", 0xFF4C5967, new View.OnClickListener() {
             public void onClick(View v) { restoreSnapshot(); }
         });
-        tools.addView(restoreButton, new LinearLayout.LayoutParams(0, dp(40), 1));
+        tools.addView(restoreButton, new LinearLayout.LayoutParams(0, dp(48), 1));
         TextView preset = compactButton("加入上报拦截", 0xFF405D85, new View.OnClickListener() {
             public void onClick(View v) { addBlockingPreset(); }
         });
-        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(0, dp(40), 1);
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(0, dp(48), 1);
         pp.leftMargin = dp(6);
         tools.addView(preset, pp);
         TextView clear = compactButton("清空全部", 0xFF8F3434, new View.OnClickListener() {
             public void onClick(View v) { confirmClear(); }
         });
-        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, dp(40), 1);
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, dp(48), 1);
         cp.leftMargin = dp(6);
         tools.addView(clear, cp);
         root.addView(tools, lp(-1, -2));
 
-        status = text("正在读取规则…", 12, 0xFF5D6570);
+        status = text("正在读取规则…", 12, UiStyle.TEXT_3);
         status.setPadding(dp(12), dp(5), dp(12), dp(7));
         root.addView(status, lp(-1, -2));
 
@@ -142,12 +143,12 @@ public class RulesActivity extends Activity {
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(dp(10), dp(2), dp(10), dp(14));
-        blackCount = sectionTitle("黑名单", 0xFF9E3030);
+        blackCount = sectionTitle("阻止规则", UiStyle.DANGER);
         body.addView(blackCount, lp(-1, -2));
         blackList = new LinearLayout(this);
         blackList.setOrientation(LinearLayout.VERTICAL);
         body.addView(blackList, lp(-1, -2));
-        whiteCount = sectionTitle("白名单", 0xFF26704A);
+        whiteCount = sectionTitle("允许规则", UiStyle.ACCENT);
         LinearLayout.LayoutParams wtp = lp(-1, -2);
         wtp.topMargin = dp(10);
         body.addView(whiteCount, wtp);
@@ -356,7 +357,7 @@ public class RulesActivity extends Activity {
 
     private void renderList(LinearLayout parent, List<String> rules, final boolean black) {
         if (rules.isEmpty()) {
-            TextView empty = text("无规则", 13, 0xFF8A9098);
+            TextView empty = text("暂无规则", 13, UiStyle.TEXT_3);
             empty.setPadding(dp(9), dp(10), dp(9), dp(10));
             parent.addView(empty, lp(-1, -2));
             return;
@@ -364,17 +365,17 @@ public class RulesActivity extends Activity {
         for (final String rule : rules) {
             LinearLayout row = new LinearLayout(this);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(dp(9), dp(2), dp(3), dp(2));
-            row.setBackgroundColor(Color.WHITE);
-            TextView name = text(rule, 13, 0xFF252A30);
+            row.setPadding(dp(11), dp(5), dp(5), dp(5));
+            row.setBackground(UiStyle.panel(this,UiStyle.SURFACE));
+            TextView name = text(rule, 13, UiStyle.TEXT);
             name.setGravity(Gravity.CENTER_VERTICAL);
             name.setSingleLine(false);
-            row.addView(name, new LinearLayout.LayoutParams(0, dp(40), 1));
+            row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
             TextView del = action("×", "删除 " + rule, new View.OnClickListener() {
                 public void onClick(View v) { deleteRule(black, rule); }
             });
-            del.setTextColor(0xFF9A3333);
-            row.addView(del, lp(dp(40), dp(40)));
+            del.setTextColor(UiStyle.DANGER);
+            row.addView(del, lp(dp(48), dp(48)));
             LinearLayout.LayoutParams rp = lp(-1, -2);
             rp.bottomMargin = dp(1);
             parent.addView(row, rp);
@@ -470,7 +471,10 @@ public class RulesActivity extends Activity {
         TextView view = text(label, 12, Color.WHITE);
         view.setGravity(Gravity.CENTER);
         view.setPadding(dp(9), 0, dp(9), 0);
-        view.setBackground(selectableBackground(color));
+        view.setSingleLine(true);
+        view.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        view.setMinWidth(dp(48));
+        view.setBackground(UiStyle.button(this,color));
         view.setOnClickListener(listener);
         return view;
     }
