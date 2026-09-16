@@ -25,7 +25,7 @@ public final class UiStyle {
     public static final int ACCENT = 0xFF42C8A5;
     public static final int ACCENT_DARK = 0xFF1A806B;
     public static final int AMBER = 0xFFE0B35B;
-    public static final int AMBER_DARK = 0xFF9D7026;
+    public static final int AMBER_DARK = 0xFF76521B;
     public static final int DANGER = 0xFFE46F65;
     public static final int BLUE = 0xFF64A7D8;
 

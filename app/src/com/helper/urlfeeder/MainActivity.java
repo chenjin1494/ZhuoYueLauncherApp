@@ -2065,7 +2065,7 @@ public class MainActivity extends Activity {
             LinearLayout btns=new LinearLayout(this); btns.setOrientation(LinearLayout.HORIZONTAL);
             LinearLayout.LayoutParams blp=new LinearLayout.LayoutParams(-1,-2); blp.topMargin=dp(16);
             Btn open=gbtn("打开",UiStyle.primaryButton(this),new View.OnClickListener(){public void onClick(View v){ d.dismiss(); launch(e); }});
-            Btn del=gbtn("🗑 卸载",grad(14,new int[]{0xFFEF4444,0xFFB91C1C}),new View.OnClickListener(){public void onClick(View v){ d.dismiss(); uninstallApp(e); }});
+            Btn del=gbtn("卸载",grad(14,new int[]{0xFF9F302D,0xFF7A2424}),new View.OnClickListener(){public void onClick(View v){ d.dismiss(); uninstallApp(e); }});
             Btn close=gbtn("关闭",glass(),new View.OnClickListener(){public void onClick(View v){ d.dismiss(); }});
             btns.addView(open,new LinearLayout.LayoutParams(0,-2,1f));
             LinearLayout.LayoutParams slp=new LinearLayout.LayoutParams(0,-2,1f); slp.leftMargin=dp(6); slp.rightMargin=0;
