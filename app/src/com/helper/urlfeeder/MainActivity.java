@@ -55,9 +55,9 @@ public class MainActivity extends Activity {
     static final String ROLE_BROWSER="android.app.role.BROWSER";
     static final String ROLE_HOME="android.app.role.HOME";
     String pendingUrl;
-    LinearLayout pageWeb,pageApps,pageSet,appsList,settingsBody;
+    LinearLayout pageWeb,pageApps,pageSet,pageControl,pageSystem,appsList,settingsBody,controlBody,systemBody;
     EditText urlInput;
-    TextView tabWeb,tabApps,tabSet,netResult;
+    TextView tabWeb,tabApps,tabSet,tabControl,tabSystem,netResult;
     FrameLayout rootF;
     FrameLayout aboutPage;
     FrameLayout checkPage;
@@ -97,7 +97,8 @@ public class MainActivity extends Activity {
         applyInsets();
         applyBg();
         boolean fromLink=handleIntent(getIntent());
-        selectTab(0);
+        int initialTab=b==null?0:b.getInt("active_tab",0);
+        selectTab(initialTab>=0&&initialTab<=4?initialTab:0);
         if(fromLink&&pendingUrl!=null) urlInput.setText(pendingUrl);
         animateIn(content);
         if(getIntent()!=null&&ACT_FIX_BROWSER.equals(getIntent().getAction())){
@@ -130,7 +131,8 @@ public class MainActivity extends Activity {
         }catch(Exception e){}
     }
 
-    protected void onResume(){ super.onResume(); try{ com.helper.urlfeeder.FloatBallService.collapseMenu(); }catch(Exception e){} }
+    protected void onSaveInstanceState(Bundle out){ out.putInt("active_tab",curTab); super.onSaveInstanceState(out); }
+    protected void onResume(){ super.onResume(); try{ com.helper.urlfeeder.FloatBallService.collapseMenu(); }catch(Exception e){} if(settingsBody!=null&&settingsBody.getChildCount()>0){ try{buildSettings();}catch(Exception e){} } }
     protected void onPause(){ super.onPause(); }
     int dp(int v){ return (int)(v*getResources().getDisplayMetrics().density+0.5f); }
     // 玻璃透明度档位 0..4 → 各层白色强度缩放系数
@@ -169,6 +171,169 @@ public class MainActivity extends Activity {
     View sp(int w){ View v=new View(this); v.setLayoutParams(new LinearLayout.LayoutParams(dp(w),1)); return v; }
 
     void buildUi(){
+        rootF=new FrameLayout(this);
+        rootF.setBackground(UiStyle.appBackground());
+        bgWall=new ImageView(this); bgWall.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        rootF.addView(bgWall,new FrameLayout.LayoutParams(-1,-1));
+
+        final LinearLayout shell=new LinearLayout(this); shell.setOrientation(LinearLayout.VERTICAL);
+        content=shell;
+        LinearLayout appBar=new LinearLayout(this); appBar.setGravity(Gravity.CENTER_VERTICAL);
+        appBar.setPadding(dp(18),dp(11),dp(16),dp(11)); appBar.setBackground(UiStyle.panel(this,0xF50F1719));
+        LinearLayout identity=new LinearLayout(this); identity.setOrientation(LinearLayout.VERTICAL);
+        TextView name=uiText("万能转发器",20,UiStyle.TEXT,true);
+        TextView scope=uiText("设备工作台",11,UiStyle.TEXT_3,false);
+        identity.addView(name); identity.addView(scope);
+        appBar.addView(identity,new LinearLayout.LayoutParams(0,-2,1f));
+        TextView state=uiText("v"+Updater.myVersionName(this),11,UiStyle.ACCENT,true);
+        state.setGravity(Gravity.CENTER); state.setPadding(dp(10),dp(5),dp(10),dp(5)); state.setBackground(UiStyle.button(this,0xFF1B302D));
+        appBar.addView(state,new LinearLayout.LayoutParams(-2,-2));
+        LinearLayout.LayoutParams barLp=new LinearLayout.LayoutParams(-1,-2); barLp.setMargins(dp(12),dp(10),dp(12),dp(6));
+        shell.addView(appBar,barLp);
+
+        int widthDp=getResources().getConfiguration().screenWidthDp;
+        boolean rail=widthDp>=700;
+        LinearLayout workspace=new LinearLayout(this); workspace.setOrientation(rail?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
+        LinearLayout nav=new LinearLayout(this); nav.setOrientation(rail?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);
+        nav.setPadding(rail?dp(8):dp(12),dp(6),rail?dp(8):dp(12),dp(8));
+        tabWeb=navButton("总览",0,rail); tabApps=navButton("应用",1,rail); tabSet=navButton("设备",2,rail);
+        tabControl=navButton("控制",3,rail); tabSystem=navButton("系统",4,rail);
+        TextView[] navs={tabWeb,tabApps,tabSet,tabControl,tabSystem};
+        for(int i=0;i<navs.length;i++){
+            LinearLayout.LayoutParams np=rail?new LinearLayout.LayoutParams(-1,dp(52)):new LinearLayout.LayoutParams(0,dp(48),1f);
+            if(i>0){ if(rail) np.topMargin=dp(5); else np.leftMargin=dp(5); }
+            nav.addView(navs[i],np);
+        }
+        if(rail) workspace.addView(nav,new LinearLayout.LayoutParams(dp(128),-1));
+        else workspace.addView(nav,new LinearLayout.LayoutParams(-1,-2));
+
+        FrameLayout pages=new FrameLayout(this);
+        pageWeb=makeDashboardPage(widthDp>=760);
+        pageApps=makeAppsPage();
+        pageSet=makeTaskPage("设备与网络","权限、桌面、防火墙与网络守护");
+        settingsBody=(LinearLayout)pageSet.getTag();
+        pageControl=makeTaskPage("悬浮控制","悬浮球、快捷动作与自定义应用");
+        controlBody=(LinearLayout)pageControl.getTag();
+        pageSystem=makeTaskPage("系统与数据","外观、默认应用、备份、更新与诊断");
+        systemBody=(LinearLayout)pageSystem.getTag();
+        pages.addView(pageWeb,new FrameLayout.LayoutParams(-1,-1));
+        pages.addView(pageApps,new FrameLayout.LayoutParams(-1,-1));
+        pages.addView(pageSet,new FrameLayout.LayoutParams(-1,-1));
+        pages.addView(pageControl,new FrameLayout.LayoutParams(-1,-1));
+        pages.addView(pageSystem,new FrameLayout.LayoutParams(-1,-1));
+        if(rail) workspace.addView(pages,new LinearLayout.LayoutParams(0,-1,1f));
+        else workspace.addView(pages,new LinearLayout.LayoutParams(-1,0,1f));
+        shell.addView(workspace,new LinearLayout.LayoutParams(-1,0,1f));
+
+        FrameLayout.LayoutParams contentLp=new FrameLayout.LayoutParams(widthDp>=1080?dp(Math.min(1120,widthDp)):-1,-1);
+        contentLp.gravity=Gravity.TOP|Gravity.CENTER_HORIZONTAL;
+        rootF.addView(shell,contentLp);
+        setContentView(rootF);
+    }
+
+    TextView uiText(String value,float size,int color,boolean bold){
+        TextView v=new TextView(this); v.setText(value); v.setTextSize(size); UiStyle.applyText(v,color);
+        if(bold) v.setTypeface(Fonts.nerd(this),Typeface.BOLD); return v;
+    }
+    TextView navButton(String label,final int idx,boolean rail){
+        TextView v=uiText(label,14,UiStyle.TEXT_2,false); v.setGravity(rail?(Gravity.START|Gravity.CENTER_VERTICAL):Gravity.CENTER);
+        v.setPadding(rail?dp(15):dp(8),0,rail?dp(10):dp(8),0); v.setBackground(UiStyle.idleSegment(this));
+        v.setOnClickListener(new View.OnClickListener(){public void onClick(View x){ selectTab(idx); if(idx==1) buildApps(); }});
+        liquidFx(v); return v;
+    }
+    LinearLayout makeTaskPage(String title,String subtitle){
+        LinearLayout page=new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL); page.setPadding(dp(14),dp(10),dp(14),dp(14));
+        page.addView(pageHeading(title,subtitle));
+        ScrollView scroll=new ScrollView(this); scroll.setSmoothScrollingEnabled(true);
+        LinearLayout body=new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(0,dp(8),0,dp(16));
+        scroll.addView(body); page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1f)); page.setTag(body); return page;
+    }
+    View pageHeading(String title,String subtitle){
+        LinearLayout box=new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(dp(4),dp(2),dp(4),dp(9));
+        box.addView(uiText(title,20,UiStyle.TEXT,true)); box.addView(uiText(subtitle,12,UiStyle.TEXT_3,false)); return box;
+    }
+    LinearLayout makeDashboardPage(boolean wide){
+        LinearLayout holder=new LinearLayout(this); holder.setOrientation(LinearLayout.VERTICAL);
+        holder.setPadding(dp(14),dp(10),dp(14),dp(14)); holder.addView(pageHeading("总览","从一个工作台完成最常用任务"));
+        webScroll=new ScrollView(this); webScroll.setSmoothScrollingEnabled(true);
+        LinearLayout body=new LinearLayout(this); body.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
+        LinearLayout primary=new LinearLayout(this); primary.setOrientation(LinearLayout.VERTICAL); primary.addView(commandPanel());
+        LinearLayout secondary=new LinearLayout(this); secondary.setOrientation(LinearLayout.VERTICAL);
+        secondary.addView(runtimePanel());
+        secondary.addView(historyPanel());
+        secondary.addView(logPanel());
+        if(wide){
+            LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,-2,.56f); left.rightMargin=dp(10); body.addView(primary,left);
+            body.addView(secondary,new LinearLayout.LayoutParams(0,-2,.44f));
+        }else{ body.addView(primary); LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2); rp.topMargin=dp(10); body.addView(secondary,rp); }
+        webScroll.addView(body); holder.addView(webScroll,new LinearLayout.LayoutParams(-1,0,1f)); return holder;
+    }
+    View commandPanel(){
+        LinearLayout panel=sectionPanel("链接与快捷命令","链接打开、联网和常用设备动作");
+        urlInput=new EditText(this); urlInput.setHint("输入网址或粘贴链接"); urlInput.setSingleLine(true); urlInput.setTextSize(15);
+        urlInput.setPadding(dp(12),dp(11),dp(12),dp(11)); urlInput.setBackground(UiStyle.field(this)); UiStyle.applyText(urlInput,UiStyle.TEXT); urlInput.setHintTextColor(UiStyle.TEXT_3);
+        panel.addView(urlInput,new LinearLayout.LayoutParams(-1,dp(52)));
+        LinearLayout openRow=new LinearLayout(this); openRow.setOrientation(LinearLayout.HORIZONTAL);
+        Btn paste=gbtn("粘贴",UiStyle.button(this,UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){paste();}});
+        Btn open=gbtn("打开链接",UiStyle.primaryButton(this),new View.OnClickListener(){public void onClick(View v){openWeb(urlInput.getText().toString().trim());}});
+        openRow.addView(paste,new LinearLayout.LayoutParams(0,-2,.34f)); LinearLayout.LayoutParams op=new LinearLayout.LayoutParams(0,-2,.66f); op.leftMargin=dp(8); openRow.addView(open,op);
+        LinearLayout.LayoutParams orp=new LinearLayout.LayoutParams(-1,-2); orp.topMargin=dp(8); panel.addView(openRow,orp);
+        panel.addView(commandRow("开放网络","清除限制并恢复访问",UiStyle.ACCENT,new Runnable(){public void run(){doOpenNet();}}));
+        panel.addView(commandRow("检测连接","检查白名单外网络",UiStyle.BLUE,new Runnable(){public void run(){runNetDetect();}}));
+        netResult=uiText("尚未检测",12,UiStyle.TEXT_3,false); netResult.setPadding(dp(14),dp(6),dp(14),dp(5)); panel.addView(netResult);
+        panel.addView(commandRow("清理后台","保留当前应用、系统与浏览器",UiStyle.TEXT_2,new Runnable(){public void run(){doClearBg();}}));
+        panel.addView(commandRow("ADB 调试","打开 USB 调试入口",UiStyle.AMBER,new Runnable(){public void run(){openAdb();}}));
+        return panel;
+    }
+    LinearLayout sectionPanel(String title,String subtitle){
+        LinearLayout p=new LinearLayout(this); p.setOrientation(LinearLayout.VERTICAL); p.setPadding(dp(14),dp(13),dp(14),dp(14)); p.setBackground(UiStyle.panel(this));
+        p.addView(uiText(title,15,UiStyle.TEXT,true)); TextView sub=uiText(subtitle,11,UiStyle.TEXT_3,false); sub.setPadding(0,0,0,dp(10)); p.addView(sub); return p;
+    }
+    View commandRow(String title,String detail,int tone,final Runnable action){
+        LinearLayout row=new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(12),dp(10),dp(10),dp(10)); row.setBackground(UiStyle.button(this,0xFF202B2E));
+        TextView mark=uiText("●",12,tone,true); row.addView(mark,new LinearLayout.LayoutParams(dp(24),-2));
+        LinearLayout words=new LinearLayout(this); words.setOrientation(LinearLayout.VERTICAL); words.addView(uiText(title,14,UiStyle.TEXT,true)); words.addView(uiText(detail,11,UiStyle.TEXT_3,false));
+        row.addView(words,new LinearLayout.LayoutParams(0,-2,1f)); TextView go=uiText("›",24,UiStyle.TEXT_3,false); go.setGravity(Gravity.CENTER); row.addView(go,new LinearLayout.LayoutParams(dp(36),dp(40)));
+        row.setOnClickListener(new View.OnClickListener(){public void onClick(View v){action.run();}}); liquidFx(row);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(7); row.setLayoutParams(lp); return row;
+    }
+    View runtimePanel(){
+        LinearLayout p=sectionPanel("当前状态","关键能力是否就绪");
+        boolean sh=ShizukuUtil.running(), auth=sh&&ShizukuUtil.permission()==0;
+        p.addView(statusLine("Shizuku",auth?"已授权":(sh?"等待授权":"未运行"),auth?UiStyle.ACCENT:UiStyle.AMBER));
+        boolean gd=prefs.getBoolean("guard_on",false); p.addView(statusLine("网络守护",gd?"运行中":"已停止",gd?UiStyle.ACCENT:UiStyle.TEXT_3));
+        boolean ov=android.provider.Settings.canDrawOverlays(this); p.addView(statusLine("悬浮控制",ov?"已授权":"需要授权",ov?UiStyle.ACCENT:UiStyle.AMBER));
+        p.addView(statusLine("默认浏览器",isDefaultBrowser()?"当前应用":"未设置",isDefaultBrowser()?UiStyle.ACCENT:UiStyle.TEXT_3));
+        return p;
+    }
+    View statusLine(String key,String value,int tone){
+        LinearLayout row=new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(0,dp(7),0,dp(7));
+        row.addView(uiText(key,12,UiStyle.TEXT_2,false),new LinearLayout.LayoutParams(0,-2,1f)); TextView v=uiText(value,12,tone,true); v.setGravity(Gravity.END); row.addView(v); return row;
+    }
+    View historyPanel(){
+        LinearLayout p=sectionPanel("最近打开","再次打开无需重新输入"); histRow=new LinearLayout(this); histRow.setOrientation(LinearLayout.HORIZONTAL);
+        android.widget.HorizontalScrollView hs=new android.widget.HorizontalScrollView(this); hs.setHorizontalScrollBarEnabled(false); hs.addView(histRow,new android.widget.HorizontalScrollView.LayoutParams(-2,-2)); p.addView(hs); refreshHist();
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(10); p.setLayoutParams(lp); return p;
+    }
+    View logPanel(){
+        LinearLayout p=sectionPanel("最近活动","本机操作记录"); LinearLayout tools=new LinearLayout(this); tools.setGravity(Gravity.CENTER_VERTICAL);
+        Btn clear=gbtn("清空",UiStyle.button(this,UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){clearLog();}}); clear.setTextSize(11);
+        Btn copy=gbtn("复制",UiStyle.button(this,UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){copyLog();}}); copy.setTextSize(11);
+        tools.addView(clear,new LinearLayout.LayoutParams(0,dp(42),1f)); LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,dp(42),1f); cp.leftMargin=dp(6); tools.addView(copy,cp); p.addView(tools);
+        logView=uiText("",11,UiStyle.TEXT_3,false); logView.setTypeface(Typeface.MONOSPACE); logView.setPadding(0,dp(8),0,0); logView.setMaxLines(5); p.addView(logView); refreshLogView();
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(10); p.setLayoutParams(lp); return p;
+    }
+    LinearLayout makeAppsPage(){
+        LinearLayout page=new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL); page.setPadding(dp(14),dp(10),dp(14),dp(14)); page.addView(pageHeading("应用","搜索、启动或管理设备上的应用"));
+        LinearLayout searchRow=new LinearLayout(this); searchRow.setGravity(Gravity.CENTER_VERTICAL); appSearch=new EditText(this); appSearch.setHint("搜索名称或包名"); appSearch.setSingleLine(true); appSearch.setTextSize(14); appSearch.setPadding(dp(12),dp(10),dp(12),dp(10)); appSearch.setBackground(UiStyle.field(this)); UiStyle.applyText(appSearch,UiStyle.TEXT); appSearch.setHintTextColor(UiStyle.TEXT_3);
+        final Btn clearBtn=gbtn("×",UiStyle.button(this,UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){appSearch.setText("");}}); clearBtn.setVisibility(View.GONE);
+        appSearch.addTextChangedListener(new TextWatcher(){ public void beforeTextChanged(CharSequence s,int a,int b,int c){} public void onTextChanged(CharSequence s,int a,int b,int c){ appQuery=s==null?"":s.toString().trim().toLowerCase(); appsDirty=true; if(searchTick==null) searchTick=new Runnable(){public void run(){if(appsReady&&curTab==1) renderApps();}}; uiH.removeCallbacks(searchTick); uiH.postDelayed(searchTick,120); } public void afterTextChanged(Editable e){clearBtn.setVisibility(e!=null&&e.length()>0?View.VISIBLE:View.GONE);} });
+        searchRow.addView(appSearch,new LinearLayout.LayoutParams(0,dp(50),1f)); LinearLayout.LayoutParams cbp=new LinearLayout.LayoutParams(dp(50),dp(50)); cbp.leftMargin=dp(8); searchRow.addView(clearBtn,cbp); page.addView(searchRow);
+        appsScroll=new ScrollView(this); appsScroll.setSmoothScrollingEnabled(true); makePullHead(); appsList=new LinearLayout(this); appsList.setOrientation(LinearLayout.VERTICAL); if(pullHead!=null) appsList.addView(pullHead); appsScroll.addView(appsList);
+        PullLayout pl=new PullLayout(this); pl.addView(appsScroll,new FrameLayout.LayoutParams(-1,-1)); LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,0,1f); pp.topMargin=dp(8); page.addView(pl,pp); return page;
+    }
+
+    void buildUiLegacy(){
         rootF=new FrameLayout(this);
         rootF.setBackground(UiStyle.appBackground());
         bgWall=new ImageView(this); bgWall.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -358,7 +523,7 @@ public class MainActivity extends Activity {
         liquidFx(b);
         return b; }
 
-    void buildSettings(){
+    void buildSettingsLegacy(){
         if(settingsBody==null) return;
         settingsBody.removeAllViews();
         settingsBody.addView(secOpt("📄 关于本应用（版本 · 开发者）",new Runnable(){public void run(){openAbout();}}));
@@ -513,6 +678,98 @@ public class MainActivity extends Activity {
         TextView tip=new TextView(this); tip.setText("想了解版本、开发者与功能？点顶部「📄 关于本应用」"); tip.setTextSize(12); tip.setTextColor(0xBBFFFFFF); tip.setPadding(dp(8),dp(4),dp(8),dp(6));
         settingsBody.addView(tip);
     }
+    void buildSettings(){
+        if(settingsBody==null||controlBody==null||systemBody==null) return;
+        settingsBody.removeAllViews(); controlBody.removeAllViews(); systemBody.removeAllViews();
+        buildDeviceTasks(settingsBody); buildControlTasks(controlBody); buildSystemTasks(systemBody);
+    }
+    void buildDeviceTasks(LinearLayout body){
+        boolean sh=ShizukuUtil.running(), auth=sh&&ShizukuUtil.permission()==0;
+        LinearLayout shizuku=taskGroup("Shizuku","需要高权限的设备操作由它执行");
+        shizuku.addView(taskItem("授权连接",auth?"已授权":(sh?"等待授权":"服务未运行"),"授予本应用 Shizuku 权限",auth?UiStyle.ACCENT:UiStyle.AMBER,new Runnable(){public void run(){ShizukuUtil.requestPerm();}}));
+        shizuku.addView(taskItem("打开 Shizuku","启动与无线调试","进入 Shizuku 管理器",UiStyle.BLUE,new Runnable(){public void run(){openShizukuApp();}}));
+        shizuku.addView(taskItem("重新检测","立即检查连接","连接中断时重新握手",UiStyle.TEXT_2,new Runnable(){public void run(){checkShizukuNow();}}));
+        shizuku.addView(taskItem("复制启动命令","ADB 使用","复制到电脑终端执行",UiStyle.TEXT_2,new Runnable(){public void run(){copyShizukuCmd();}}));
+        shizuku.addView(taskItem("截图辅助",ShotAccessibilityService.ready()?"已开启":"未开启","无需录屏授权框的截图方式",ShotAccessibilityService.ready()?UiStyle.ACCENT:UiStyle.TEXT_3,new Runnable(){public void run(){openAccessibilitySettings();}}));
+        body.addView(shizuku);
+
+        LinearLayout desktop=taskGroup("桌面环境","切换桌面与 HOME 归属");
+        desktop.addView(taskItem("使用 Lawnchair","停用卓越桌面","适合日常使用与持续控制",UiStyle.ACCENT,new Runnable(){public void run(){szToLawnchair();}}));
+        desktop.addView(taskItem("恢复卓越桌面","重新启用原桌面","返回设备原始桌面环境",UiStyle.AMBER,new Runnable(){public void run(){szRestoreZy();}}));
+        desktop.addView(taskItem("查询桌面状态","立即检测","查看当前启用项与 HOME",UiStyle.TEXT_2,new Runnable(){public void run(){szStatus();}}));
+        desktop.addView(taskItem("设为默认桌面","系统设置","将本应用注册为 HOME 入口",UiStyle.TEXT_2,new Runnable(){public void run(){fixDefaultHome();}}));
+        body.addView(desktop,sectionLp());
+
+        final boolean gd=prefs.getBoolean("guard_on",false), vpn=prefs.getBoolean("vpn_block_zy",false), fw=prefs.getBoolean("fw_block_zy",false), sup=prefs.getBoolean("suppress_zy",false);
+        LinearLayout network=taskGroup("网络与防护","联网恢复、上报阻断和规则管理");
+        network.addView(taskItem("网络守护",gd?"运行中":"已停止","被拦截时自动恢复联网",gd?UiStyle.ACCENT:UiStyle.TEXT_3,new Runnable(){public void run(){startGuard();}}));
+        network.addView(taskItem("停止网络守护","手动停用","停用后不会在启动时自动拉起",UiStyle.DANGER,new Runnable(){public void run(){stopGuard();}}));
+        network.addView(taskItem("上报域名拦截",vpn?(BlockVpnService.running?"已开启":"已暂停"):"未开启","仅阻止追踪域名，保留其它云服务",vpn?UiStyle.ACCENT:UiStyle.TEXT_3,new Runnable(){public void run(){toggleBlockVpn();}}));
+        network.addView(taskItem("防火墙 IP 拦截",fw?"已开启":"未开启","使用规则快照，可一键复原",fw?UiStyle.ACCENT:UiStyle.TEXT_3,new Runnable(){public void run(){toggleFwBlock();}}));
+        network.addView(taskItem("规则管理","打开工具","增删、快照和恢复防火墙规则",UiStyle.BLUE,new Runnable(){public void run(){startActivity(new Intent(MainActivity.this,RulesActivity.class));}}));
+        network.addView(taskItem("持续抑制监控",sup?"已开启":"未开启","强停卓越监控服务，需要 Lawnchair",sup?UiStyle.ACCENT:UiStyle.TEXT_3,new Runnable(){public void run(){toggleSuppressZy();}}));
+        body.addView(network,sectionLp());
+    }
+    void buildControlTasks(LinearLayout body){
+        boolean overlay=android.provider.Settings.canDrawOverlays(this);
+        LinearLayout service=taskGroup("悬浮球服务","单击菜单，双击截图，长按清理后台");
+        service.addView(taskItem(overlay?"启动悬浮球":"授权悬浮窗",overlay?"已授权":"需要授权","退出应用后仍可常驻",overlay?UiStyle.ACCENT:UiStyle.AMBER,new Runnable(){public void run(){if(android.provider.Settings.canDrawOverlays(MainActivity.this)) startFloatBall(); else requestOverlay();}}));
+        service.addView(taskItem("停止悬浮球","关闭服务","不会删除菜单和外观设置",UiStyle.DANGER,new Runnable(){public void run(){stopFloatBall();}}));
+        body.addView(service);
+
+        LinearLayout appearance=taskGroup("球体大小","调整可见尺寸，拖动区域同步变化");
+        int eff=prefs.getInt("float_size",0); if(eff<=0) eff=46; int[] values={36,46,56,68}; String[] names={"小","中","大","特大"};
+        LinearLayout sizes=new LinearLayout(this); sizeBtns=new Btn[values.length];
+        for(int i=0;i<values.length;i++){ final int px=values[i]; Btn b=gbtn(names[i],UiStyle.button(this,px==eff?0xFF245148:UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){setFloatSize(px);}}); b.setTextSize(12); sizeBtns[i]=b; LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(46),1f); if(i>0) lp.leftMargin=dp(5); sizes.addView(b,lp); }
+        appearance.addView(sizes); body.addView(appearance,sectionLp());
+
+        boolean quick=prefs.getBoolean("float_quick",true);
+        LinearLayout menu=taskGroup("两级菜单","一级固定为“前往 / 工具 / 应用”");
+        menu.addView(taskItem("设备快捷动作",quick?"显示":"隐藏","音量、亮度、静音和锁屏位于“工具”",quick?UiStyle.ACCENT:UiStyle.TEXT_3,new Runnable(){public void run(){toggleQuickDisc();}}));
+        menu.addView(taskItem("添加应用","加入“应用”菜单","选择应用并设置显示名称",UiStyle.BLUE,new Runnable(){public void run(){pickCustomApp();}}));
+        floatOrderList=new LinearLayout(this); floatOrderList.setOrientation(LinearLayout.VERTICAL); menu.addView(floatOrderList); refreshFloatOrder();
+        body.addView(menu,sectionLp());
+    }
+    void buildSystemTasks(LinearLayout body){
+        LinearLayout diagnostics=taskGroup("诊断与记录","检查设备状态和本机操作历史");
+        diagnostics.addView(taskItem("设备自检","打开检查页","检测关键组件并提供修复入口",UiStyle.BLUE,new Runnable(){public void run(){openCheck();}}));
+        diagnostics.addView(taskItem("审计日志","打开记录","筛选、复制、导出或清理",UiStyle.TEXT_2,new Runnable(){public void run(){startActivity(new Intent(MainActivity.this,AuditActivity.class));}}));
+        diagnostics.addView(taskItem("关于应用","v"+Updater.myVersionName(this),"版本、开发者与功能说明",UiStyle.TEXT_2,new Runnable(){public void run(){openAbout();}}));
+        body.addView(diagnostics);
+
+        LinearLayout defaults=taskGroup("系统入口","浏览器、默认应用和调试");
+        defaults.addView(taskItem("默认浏览器",isDefaultBrowser()?"已设置":"未设置","让所有链接先进入万能转发器",isDefaultBrowser()?UiStyle.ACCENT:UiStyle.TEXT_3,new Runnable(){public void run(){fixDefaultBrowser();}}));
+        defaults.addView(taskItem("默认应用设置","打开系统页面","查看和修改全部默认关联",UiStyle.TEXT_2,new Runnable(){public void run(){openDefaultAppsSettings();}}));
+        defaults.addView(taskItem("ADB / USB 调试","打开开发者入口","用于 Shizuku 启动和设备调试",UiStyle.AMBER,new Runnable(){public void run(){openAdb();}}));
+        body.addView(defaults,sectionLp());
+
+        LinearLayout visual=taskGroup("界面外观","背景与内容表面密度");
+        String[] bgNames={"深墨","青岚","蓝灰","壁纸"}; LinearLayout bgRow=new LinearLayout(this); final int currentBg=prefs.getInt("bg",0);
+        for(int i=0;i<4;i++){ final int value=i; Btn b=gbtn(bgNames[i],UiStyle.button(this,i==currentBg?0xFF245148:UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){setBgStyle(value); rebuildUi();}}); b.setTextSize(12); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(44),1f); if(i>0) lp.leftMargin=dp(5); bgRow.addView(b,lp); } visual.addView(bgRow);
+        String[] alphaNames={"透","轻","标准","实","高"}; LinearLayout alphaRow=new LinearLayout(this); final int ga=prefs.getInt("ga",2);
+        for(int i=0;i<5;i++){ final int value=i; Btn b=gbtn(alphaNames[i],UiStyle.button(this,i==ga?0xFF245148:UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){setGlassAlpha(value);}}); b.setTextSize(11); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(42),1f); if(i>0) lp.leftMargin=dp(4); alphaRow.addView(b,lp); } LinearLayout.LayoutParams alp=new LinearLayout.LayoutParams(-1,-2); alp.topMargin=dp(7); visual.addView(alphaRow,alp);
+        body.addView(visual,sectionLp());
+
+        LinearLayout wallpaper=taskGroup("桌面壁纸","直接应用到系统桌面"); String[] walls={"暮色","海岸","暖阳","森林"}; LinearLayout wallRow=new LinearLayout(this);
+        for(int i=0;i<4;i++){ final int value=i; Btn b=gbtn(walls[i],UiStyle.button(this,UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){setWall(value);}}); b.setTextSize(12); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(44),1f); if(i>0) lp.leftMargin=dp(5); wallRow.addView(b,lp); } wallpaper.addView(wallRow); body.addView(wallpaper,sectionLp());
+
+        LinearLayout data=taskGroup("数据与更新","设置备份兼容现有格式和偏好键");
+        data.addView(taskItem("备份设置","写入下载目录","保存当前全部配置",UiStyle.TEXT_2,new Runnable(){public void run(){backupSettings();}}));
+        data.addView(taskItem("恢复设置","选择本机备份","恢复后立即重建界面与悬浮菜单",UiStyle.TEXT_2,new Runnable(){public void run(){restoreSettings();}}));
+        data.addView(taskItem("检查更新","GitHub 更新通道","校验包名和签名后安装",UiStyle.ACCENT,new Runnable(){public void run(){Updater.checkAndPrompt(MainActivity.this,new Updater.Cb(){public void log(final String m){runOnUiThread(new Runnable(){public void run(){addLog(m);}});}});}}));
+        body.addView(data,sectionLp());
+    }
+    LinearLayout taskGroup(String title,String subtitle){
+        LinearLayout box=sectionPanel(title,subtitle); return box;
+    }
+    View taskItem(String title,String state,String detail,int tone,final Runnable action){
+        LinearLayout row=new LinearLayout(this); row.setOrientation(LinearLayout.VERTICAL); row.setPadding(dp(12),dp(9),dp(10),dp(9)); row.setBackground(UiStyle.button(this,0xFF202B2E));
+        LinearLayout top=new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL); top.addView(uiText(title,14,UiStyle.TEXT,true),new LinearLayout.LayoutParams(0,-2,1f)); TextView sv=uiText(state,11,tone,true); sv.setGravity(Gravity.END); top.addView(sv); row.addView(top);
+        TextView desc=uiText(detail,11,UiStyle.TEXT_3,false); desc.setPadding(0,dp(2),dp(24),0); row.addView(desc);
+        row.setOnClickListener(new View.OnClickListener(){public void onClick(View v){action.run();}}); liquidFx(row); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(6); row.setLayoutParams(lp); return row;
+    }
+    LinearLayout.LayoutParams sectionLp(){ LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(10); return lp; }
+
     TextView secTitle(String s){ TextView t=new TextView(this); t.setText(s); t.setTextSize(12); t.setAllCaps(false); UiStyle.applyText(t,UiStyle.ACCENT); t.setPadding(dp(4),dp(12),dp(4),dp(6)); return t; }
     Btn secOpt(String label,final Runnable act){ Btn b=new Btn(this); b.setText(label); b.setTextSize(14); b.setAllCaps(false);
         b.setMinHeight(dp(48)); b.setGravity(Gravity.START|Gravity.CENTER_VERTICAL); b.setPadding(dp(14),dp(10),dp(14),dp(10)); b.setBackground(UiStyle.panel(this,UiStyle.SURFACE)); UiStyle.applyText(b,UiStyle.TEXT);
@@ -527,8 +784,8 @@ public class MainActivity extends Activity {
     LinearLayout checkBody;
     LinearLayout floatOrderList;
     Btn[] sizeBtns;   // 悬浮球大小选项按钮(供局部高亮, 不整页重建)
-    String[] FO_ID={"home","app","sweep","shot","net"};          // 返回/最近已移除
-    String[] FO_NAME={"● 主页","🧰 打开主界面","🧹 清理后台","📸 截图","🔓 开网"};
+    String[] FO_ID={"home","app","sweep","shot","net"};
+    String[] FO_NAME={"主页","万能转发器","清理后台","截图","开放网络"};
     void openCheck(){ try{ com.helper.urlfeeder.FloatBallService.collapseMenu(); }catch(Exception e){} if(checkPage==null) buildCheck(); try{ checkPage.bringToFront(); }catch(Exception e){} checkPage.setVisibility(View.VISIBLE); refreshCheck(); }
     void closeCheck(){ if(checkPage!=null) checkPage.setVisibility(View.GONE); }
     void buildCheck(){
@@ -555,6 +812,26 @@ public class MainActivity extends Activity {
         checkPage.setVisibility(View.GONE);
     }
     void refreshCheck(){
+        if(checkBody==null) return; checkBody.removeAllViews();
+        LinearLayout actions=new LinearLayout(this); actions.setGravity(Gravity.CENTER_VERTICAL);
+        Btn back=gbtn("‹ 返回",UiStyle.button(this,UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){closeCheck();}});
+        Btn refresh=gbtn("重新检测",UiStyle.button(this,0xFF24444C),new View.OnClickListener(){public void onClick(View v){refreshCheck();}});
+        actions.addView(back,new LinearLayout.LayoutParams(dp(104),dp(46))); LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(dp(118),dp(46)); rp.leftMargin=dp(8); actions.addView(refresh,rp); checkBody.addView(actions); checkBody.addView(pageHeading("设备自检","读取关键组件状态并提供定向修复"));
+        LinearLayout state=sectionPanel("检查结果","仅读取状态，不会自动修改设备");
+        String fw=pmState("cn.com.microtrust.firewall"); boolean fwOk=fw.indexOf("停用")<0&&fw.indexOf("未装")<0; state.addView(statusLine("管控防火墙",fw,fwOk?UiStyle.ACCENT:UiStyle.AMBER));
+        java.util.List<String[]> browsers=webBrowsers(); state.addView(statusLine("可用浏览器",""+browsers.size()+" 个",browsers.size()>0?UiStyle.ACCENT:UiStyle.AMBER));
+        String home="未知"; try{Intent h=new Intent(Intent.ACTION_MAIN); h.addCategory(Intent.CATEGORY_HOME); ResolveInfo ri=getPackageManager().resolveActivity(h,PackageManager.MATCH_DEFAULT_ONLY); home=(ri!=null&&ri.activityInfo!=null)?ri.activityInfo.packageName:"无";}catch(Exception e){}
+        boolean homeOk=home.indexOf("lawnchair")>=0||home.indexOf("urlfeeder")>=0; state.addView(statusLine("默认桌面",home,homeOk?UiStyle.ACCENT:UiStyle.AMBER));
+        state.addView(statusLine("网络守护",gRunning()?"运行中":"未运行",gRunning()?UiStyle.ACCENT:UiStyle.TEXT_3));
+        boolean sh=ShizukuUtil.running(), auth=sh&&ShizukuUtil.permission()==0; state.addView(statusLine("Shizuku",auth?"运行并已授权":(sh?"运行但未授权":"未运行"),auth?UiStyle.ACCENT:UiStyle.AMBER));
+        checkBody.addView(state);
+        LinearLayout repair=sectionPanel("修复动作","需要 Shizuku 的操作会先检查授权");
+        repair.addView(commandRow("启用防火墙应用","仅在组件被停用时使用",UiStyle.BLUE,new Runnable(){public void run(){szFix("enable","cn.com.microtrust.firewall");}}));
+        repair.addView(commandRow("恢复联网","清理限制规则并重新连接",UiStyle.ACCENT,new Runnable(){public void run(){doOpenNet();}}));
+        repair.addView(commandRow("启动网络守护","已运行时不会重复启动",UiStyle.AMBER,new Runnable(){public void run(){if(!gRunning()) launchGuardSilent(); else toast("网络守护已在运行");}}));
+        checkBody.addView(repair,sectionLp());
+    }
+    void refreshCheckLegacy(){
         if(checkBody==null) return;
         checkBody.removeAllViews();
         LinearLayout bar=new LinearLayout(this); bar.setOrientation(LinearLayout.HORIZONTAL);
@@ -649,6 +926,24 @@ public class MainActivity extends Activity {
     }
     void buildAbout(){
         if(rootF==null) return;
+        aboutPage=new FrameLayout(this); aboutPage.setBackground(UiStyle.appBackground());
+        ScrollView scroll=new ScrollView(this); scroll.setSmoothScrollingEnabled(true); aboutPage.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
+        LinearLayout body=new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(18),dp(14),dp(18),dp(24)); scroll.addView(body);
+        Btn back=gbtn("‹ 返回",UiStyle.button(this,UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){closeAbout();}}); back.setTextSize(13);
+        body.addView(back,new LinearLayout.LayoutParams(dp(104),dp(46))); body.addView(pageHeading("关于","版本信息与功能边界"));
+        LinearLayout identity=sectionPanel("万能转发器","面向受管设备的连接与控制工作台");
+        LinearLayout top=new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL); ImageView icon=new ImageView(this); try{icon.setImageDrawable(getPackageManager().getApplicationIcon(getPackageName()));}catch(Exception e){}
+        top.addView(icon,new LinearLayout.LayoutParams(dp(64),dp(64))); LinearLayout words=new LinearLayout(this); words.setOrientation(LinearLayout.VERTICAL); words.setPadding(dp(14),0,0,0); words.addView(uiText("设备工作台",16,UiStyle.TEXT,true)); words.addView(uiText("链接 · 应用 · 权限 · 网络 · 悬浮控制",12,UiStyle.TEXT_3,false)); top.addView(words,new LinearLayout.LayoutParams(0,-2,1f)); identity.addView(top); body.addView(identity);
+        String vn="?",vc="?"; try{android.content.pm.PackageInfo pi=getPackageManager().getPackageInfo(getPackageName(),0); vn=pi.versionName; vc=""+pi.versionCode;}catch(Exception e){}
+        LinearLayout info=sectionPanel("构建信息","安装包身份与兼容范围"); meta(info,"版本","v"+vn+" ("+vc+")"); meta(info,"开发者","chenjin1494"); meta(info,"包名","com.helper.urlfeeder"); meta(info,"最低系统","Android 7.0 / API 24"); meta(info,"目标系统","API 34"); body.addView(info,sectionLp());
+        LinearLayout scope=sectionPanel("功能范围","界面重构不改变这些底层模块");
+        TextView details=uiText("链接分发与默认浏览器\n应用启动与管理\nShizuku、桌面切换与截图\n网络恢复、守护和防火墙规则\n悬浮球手势与两级动作菜单\n设置备份、恢复与签名更新",13,UiStyle.TEXT_2,false); details.setLineSpacing(dp(4),1f); scope.addView(details); body.addView(scope,sectionLp());
+        TextView note=uiText("仅用于合法的设备管理与学习研究。",11,UiStyle.TEXT_3,false); note.setGravity(Gravity.CENTER); note.setPadding(0,dp(16),0,0); body.addView(note);
+        rootF.addView(aboutPage,new FrameLayout.LayoutParams(-1,-1)); aboutPage.setVisibility(View.GONE);
+    }
+
+    void buildAboutLegacy(){
+        if(rootF==null) return;
         aboutPage=new FrameLayout(this);
         aboutPage.setBackground(UiStyle.appBackground());
         final LinearLayout body=new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
@@ -723,20 +1018,17 @@ public class MainActivity extends Activity {
         }
     }
     void selectTab(int idx){
+        if(idx<0||idx>4) idx=0;
         curTab=idx;
-        if(idx==2&&settingsBody!=null&&settingsBody.getChildCount()==0){ buildSettings(); }
-        tabWeb.setBackground(idx==0?UiStyle.activeSegment(this):UiStyle.idleSegment(this));
-        tabApps.setBackground(idx==1?UiStyle.activeSegment(this):UiStyle.idleSegment(this));
-        tabSet.setBackground(idx==2?UiStyle.activeSegment(this):UiStyle.idleSegment(this));
-        tabWeb.setTextColor(idx==0?UiStyle.ACCENT:UiStyle.TEXT_2);
-        tabApps.setTextColor(idx==1?UiStyle.ACCENT:UiStyle.TEXT_2);
-        tabSet.setTextColor(idx==2?UiStyle.ACCENT:UiStyle.TEXT_2);
-        webScroll.setVisibility(idx==0?View.VISIBLE:View.GONE);
-        pageWeb.setVisibility(idx==0?View.VISIBLE:View.GONE);
-        pageApps.setVisibility(idx==1?View.VISIBLE:View.GONE);
-        pageSet.setVisibility(idx==2?View.VISIBLE:View.GONE);
-        View cur = idx==0?pageWeb:(idx==1?pageApps:pageSet);
-        animateIn(cur);
+        if(idx>=2&&settingsBody!=null&&settingsBody.getChildCount()==0) buildSettings();
+        TextView[] nav={tabWeb,tabApps,tabSet,tabControl,tabSystem};
+        View[] pages={pageWeb,pageApps,pageSet,pageControl,pageSystem};
+        for(int i=0;i<nav.length;i++){
+            if(nav[i]!=null){ nav[i].setBackground(i==idx?UiStyle.activeSegment(this):UiStyle.idleSegment(this)); nav[i].setTextColor(i==idx?UiStyle.ACCENT:UiStyle.TEXT_2); nav[i].setSelected(i==idx); }
+            if(pages[i]!=null) pages[i].setVisibility(i==idx?View.VISIBLE:View.GONE);
+        }
+        if(idx==1) buildApps();
+        animateIn(pages[idx]);
     }
     void animateIn(final View v){ if(v==null) return; v.animate().cancel();
         v.setAlpha(0f); v.setTranslationY(dp(18));
@@ -751,12 +1043,15 @@ public class MainActivity extends Activity {
     // 重建整个 UI：用于 glass 等构建期取值的变化即时生效（保留当前标签与网页输入）
     void rebuildUi(){
         String u=""; if(urlInput!=null){ try{u=urlInput.getText().toString();}catch(Exception e){} }
+        String q=appSearch==null?appQuery:appSearch.getText().toString();
         int t=curTab;
-        dim=null; aboutPage=null; netResult=null; // 旧引用指向旧视图树，重建后置空防误用
+        dim=null; aboutPage=null; checkPage=null; checkBody=null; netResult=null;
         buildUi();
         applyInsets();
         applyBg();
         if(urlInput!=null&&u.length()>0) urlInput.setText(u);
+        if(appSearch!=null&&q!=null&&q.length()>0) appSearch.setText(q);
+        else if(q==null||q.length()==0) appQuery="";
         appsDirty=true;              // 视图树已重建, 需要重新渲染(数据仍用缓存)
         selectTab(t);
         if(t==1) buildApps();
@@ -1110,7 +1405,7 @@ public class MainActivity extends Activity {
     void toggleQuickDisc(){
         boolean on=prefs.getBoolean("float_quick",true);
         prefs.edit().putBoolean("float_quick",!on).apply();
-        toast(!on?"已开启快捷动作盘（悬浮球 → 🎛 快捷）":"已隐藏快捷动作盘");
+        toast(!on?"设备快捷动作已加入“工具”菜单":"设备快捷动作已从“工具”菜单隐藏");
         try{ Intent i=new Intent(this,FloatBallService.class); i.setAction("reload"); startService(i); }catch(Exception e){}
         rebuildUi();
     }
@@ -1377,79 +1672,58 @@ public class MainActivity extends Activity {
                 Btn b=sizeBtns[i];
                 if(b==null) continue;
                 boolean s=(sel==szs[i]);
-                b.setText((s?"● ":"○ ")+szn[i]+" "+szs[i]);
-                b.setBackground(s?grad(12,new int[]{0xFF4A7DFF,0xFF1E3A8A}):glass());
+                b.setText(szn[i]+" "+szs[i]);
+                b.setBackground(UiStyle.button(this,s?0xFF245148:UiStyle.SURFACE_2));
+                b.setTextColor(s?UiStyle.ACCENT:UiStyle.TEXT_2);
             }
         }catch(Exception e){}
     }
     java.util.List<String> floatOrder(){
         java.util.List<String> ord=new java.util.ArrayList<String>();
         String saved=prefs.getString("float_order",null);
-        if(saved!=null&&saved.length()>0){
-            String[] arr=saved.split(",");
-            for(String x:arr){ if(x!=null&&x.trim().length()>0) ord.add(x.trim()); }
-        }
-        ord.remove("back"); ord.remove("recent");    // 清掉历史残留
-        for(String id:FO_ID){ if(!ord.contains(id)) ord.add(id); }
+        if(saved!=null) for(String x:saved.split(",")){ for(String id:FO_ID){ if(id.equals(x)&&!ord.contains(id)) ord.add(id); } }
+        for(String id:FO_ID) if(!ord.contains(id)) ord.add(id);
         return ord;
     }
     void saveFloatOrder(java.util.List<String> ord){
-        StringBuilder sb=new StringBuilder();
-        for(String x:ord){ sb.append(x).append(","); }
-        prefs.edit().putString("float_order",sb.toString()).commit();
-        // 通知悬浮球热重载
-        try{ Intent s=new Intent(this,FloatBallService.class); s.setAction("reload"); startService(s); }catch(Exception e){}
+        StringBuilder sb=new StringBuilder(); for(String x:ord) sb.append(x).append(",");
+        prefs.edit().putString("float_order",sb.toString()).commit(); reloadFloatBall();
     }
     void refreshFloatOrder(){
-        if(floatOrderList==null) return;
-        floatOrderList.removeAllViews();
-        java.util.List<String> ord=floatOrder();
-        for(int i=0;i<ord.size();i++){
-            final int pos=i;
-            final String id=ord.get(i);
-            String nm=id;
-            for(int k=0;k<FO_ID.length;k++){ if(FO_ID[k].equals(id)){ nm=FO_NAME[k]; break; } }
-            if(id.startsWith("c")){ String cl=customLabel(id); if(cl!=null) nm=cl; else continue; }
-            if("close".equals(id)) nm="✕ 关闭悬浮球（固定末位）";
-            LinearLayout row=new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setBackground(glass()); row.setPadding(dp(10),dp(4),dp(6),dp(4));
-            TextView lb=new TextView(this); lb.setText((pos+1)+". "+nm); lb.setTextColor(0xEFFFFFFF); lb.setTextSize(13);
-            row.addView(lb,new LinearLayout.LayoutParams(0,-2,1f));
-            if(!("close".equals(id))){
-                Btn up=gbtn("▲",shp(10,0x2EFFFFFF),new View.OnClickListener(){public void onClick(View v){ moveFloatItem(pos,-1); }});
-                up.setTextSize(11); row.addView(up,new LinearLayout.LayoutParams(-2,-2));
-            }
-            if(pos<ord.size()-1){
-                Btn dn=gbtn("▼",shp(10,0x2EFFFFFF),new View.OnClickListener(){public void onClick(View v){ moveFloatItem(pos,1); }});
-                dn.setTextSize(11);
-                LinearLayout.LayoutParams dlp=new LinearLayout.LayoutParams(-2,-2); dlp.leftMargin=dp(4);
-                row.addView(dn,dlp);
-            }
-            if(id.startsWith("c")){
-                Btn del=gbtn("🗑",shp(10,0x66FF5555),new View.OnClickListener(){public void onClick(View v){ delCustom(id); }});
-                del.setTextSize(11);
-                LinearLayout.LayoutParams dlp2=new LinearLayout.LayoutParams(-2,-2); dlp2.leftMargin=dp(4);
-                row.addView(del,dlp2);
-            }
-            LinearLayout.LayoutParams rlp=new LinearLayout.LayoutParams(-1,-2); if(pos>0) rlp.topMargin=dp(4);
-            floatOrderList.addView(row,rlp);
-        }
+        if(floatOrderList==null) return; floatOrderList.removeAllViews();
+        final String[] go={"home","app"}, tools={"sweep","shot","net"};
+        addOrderHeading("前往"); for(String id:orderedForUi(go)) addBuiltInOrderRow(id,go);
+        addOrderHeading("工具"); for(String id:orderedForUi(tools)) addBuiltInOrderRow(id,tools);
+        addOrderHeading("应用"); java.util.List<String[]> custom=customList();
+        if(custom.isEmpty()){ TextView empty=uiText("尚未添加应用",12,UiStyle.TEXT_3,false); empty.setPadding(dp(10),dp(9),dp(10),dp(9)); floatOrderList.addView(empty); }
+        for(int i=0;i<custom.size();i++) addCustomOrderRow(i,custom.get(i)[0],custom.size());
     }
-    void moveFloatItem(int pos,int dir){
-        java.util.List<String> ord=floatOrder();
-        int to=pos+dir;
-        if(to<0||to>=ord.size()) return;
-        if("close".equals(ord.get(to))&&dir>0) return;      // close 不可插入(保持在末)
-        String id=ord.remove(pos);
-        if(dir<0&&"close".equals(ord.get(0))) { // 不移到 close 前? close 恒末, 直接放其前位置 to
-        }
-        if(to>=ord.size()) ord.add(id); else ord.add(to,id);
-        // close 固定末尾
-        if(ord.contains("close")){ ord.remove("close"); ord.add("close"); }
-        saveFloatOrder(ord);
-        refreshFloatOrder();
-        toast("已调整，悬浮球菜单已更新");
+    java.util.List<String> orderedForUi(String[] allowed){
+        java.util.List<String> out=new java.util.ArrayList<String>(); java.util.List<String> all=floatOrder();
+        for(String id:all) for(String ok:allowed) if(ok.equals(id)&&!out.contains(id)) out.add(id); return out;
     }
+    void addOrderHeading(String title){ TextView h=uiText(title,11,UiStyle.ACCENT,true); h.setPadding(dp(4),dp(10),dp(4),dp(5)); floatOrderList.addView(h); }
+    String floatName(String id){ for(int i=0;i<FO_ID.length;i++) if(FO_ID[i].equals(id)) return FO_NAME[i]; return id; }
+    void addBuiltInOrderRow(final String id,final String[] group){
+        LinearLayout row=new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(11),dp(5),dp(6),dp(5)); row.setBackground(UiStyle.button(this,0xFF202B2E));
+        row.addView(uiText(floatName(id),13,UiStyle.TEXT,false),new LinearLayout.LayoutParams(0,-2,1f));
+        Btn up=gbtn("↑",UiStyle.button(this,UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){moveFloatId(id,group,-1);}}); Btn down=gbtn("↓",UiStyle.button(this,UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){moveFloatId(id,group,1);}});
+        row.addView(up,new LinearLayout.LayoutParams(dp(44),dp(42))); LinearLayout.LayoutParams dl=new LinearLayout.LayoutParams(dp(44),dp(42)); dl.leftMargin=dp(4); row.addView(down,dl);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(4); floatOrderList.addView(row,lp);
+    }
+    void moveFloatId(String id,String[] group,int dir){
+        java.util.List<String> all=floatOrder(), visible=orderedForUi(group); int p=visible.indexOf(id), to=p+dir; if(p<0||to<0||to>=visible.size()) return;
+        int a=all.indexOf(id), b=all.indexOf(visible.get(to)); String tmp=all.get(a); all.set(a,all.get(b)); all.set(b,tmp); saveFloatOrder(all); refreshFloatOrder();
+    }
+    void addCustomOrderRow(final int index,String label,int count){
+        LinearLayout row=new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(11),dp(5),dp(6),dp(5)); row.setBackground(UiStyle.button(this,0xFF202B2E));
+        row.addView(uiText(label,13,UiStyle.TEXT,false),new LinearLayout.LayoutParams(0,-2,1f));
+        Btn up=gbtn("↑",UiStyle.button(this,UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){moveCustom(index,-1);}}); Btn down=gbtn("↓",UiStyle.button(this,UiStyle.SURFACE_2),new View.OnClickListener(){public void onClick(View v){moveCustom(index,1);}}); Btn del=gbtn("×",UiStyle.button(this,0xFF432524),new View.OnClickListener(){public void onClick(View v){delCustom("c"+index);}});
+        row.addView(up,new LinearLayout.LayoutParams(dp(44),dp(42))); LinearLayout.LayoutParams dl=new LinearLayout.LayoutParams(dp(44),dp(42)); dl.leftMargin=dp(4); row.addView(down,dl); LinearLayout.LayoutParams xl=new LinearLayout.LayoutParams(dp(44),dp(42)); xl.leftMargin=dp(4); row.addView(del,xl);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(4); floatOrderList.addView(row,lp);
+    }
+    void moveCustom(int index,int dir){ java.util.List<String[]> list=customList(); int to=index+dir; if(index<0||to<0||index>=list.size()||to>=list.size()) return; String[] item=list.remove(index); list.add(to,item); saveCustom(list); reloadFloatBall(); refreshFloatOrder(); }
+    void moveFloatItem(int pos,int dir){ java.util.List<String> all=floatOrder(); if(pos<0||pos>=all.size()) return; String id=all.get(pos); String[] group=("home".equals(id)||"app".equals(id))?new String[]{"home","app"}:new String[]{"sweep","shot","net"}; moveFloatId(id,group,dir); }
     // ---------- 自定义应用项 ----------
     java.util.List<String[]> customList(){
         java.util.List<String[]> out=new java.util.ArrayList<String[]>();
@@ -1483,19 +1757,9 @@ public class MainActivity extends Activity {
         if(n>=l.size()) return;
         l.remove(n);
         saveCustom(l);
-        // 更新顺序: 删除 cN 并把之后的 cM 改 cM-1
-        java.util.List<String> ord=floatOrder();
-        ord.remove("c"+n);
-        java.util.List<String> nw=new java.util.ArrayList<String>();
-        for(String x:ord){
-            if(x.startsWith("c")){
-                try{ int m=Integer.parseInt(x.substring(1)); if(m>n) nw.add("c"+(m-1)); else nw.add(x); }
-                catch(Exception e){ nw.add(x); }
-            } else nw.add(x);
-        }
-        saveFloatOrder(nw);
+        reloadFloatBall();
         refreshFloatOrder();
-        toast("已移除该菜单项");
+        toast("已从应用菜单移除");
     }
     void addCustomApp(String label,String pkg){
         java.util.List<String[]> l=customList();
@@ -1503,13 +1767,9 @@ public class MainActivity extends Activity {
         for(String[] it:l){ if(it[1].equals(pkg)){ toast("该应用已在菜单中"); return; } }
         l.add(new String[]{label,pkg});
         saveCustom(l);
-        java.util.List<String> ord=floatOrder();
-        // close 之前插入 c{size-1}
-        ord.add("c"+(l.size()-1));
-        if(ord.contains("close")){ ord.remove("close"); ord.add("close"); }
-        saveFloatOrder(ord);
+        reloadFloatBall();
         refreshFloatOrder();
-        toast("已添加:「"+label+"」到悬浮球菜单");
+        toast("已加入应用菜单："+label);
     }
 
     void askCustomName(final String defLabel,final String pkg){
@@ -1523,8 +1783,8 @@ public class MainActivity extends Activity {
             host.setPadding(dp(2),dp(8),dp(2),0);
             host.addView(et,new LinearLayout.LayoutParams(-1,-2));
             final android.app.AlertDialog dlg=new android.app.AlertDialog.Builder(this)
-                .setTitle("添加到悬浮球菜单")
-                .setMessage("应用: "+defLabel+"\n可自定义按钮名称")
+                .setTitle("加入悬浮应用")
+                .setMessage("应用："+defLabel+"\n名称将显示在“应用”菜单中")
                 .setView(host)
                 .setPositiveButton("添加",null)
                 .setNegativeButton("取消",null)

@@ -43,7 +43,7 @@ public class FloatBallService extends Service {
     private long lastTapUp=0;
     private static final int LONG_PRESS_MS=520;
     private static final int DOUBLE_TAP_MS=280;
-    private int subMode=0;         // 二级圆盘内容: 0=我的应用, 1=快捷动作
+    private int subMode=0;         // 二级圆盘内容: 前往 / 工具 / 应用
     private boolean subVisible=false;     // 二级"应用"菜单是否显示
     private boolean transitioning=false;  // 一二级切换动画进行中(防止重复触发)
     private FrameLayout sub=null;     // 二级"应用"圆盘窗口
@@ -393,52 +393,33 @@ public class FloatBallService extends Service {
     }
 
     // ---------------- 轮盘渲染 ----------------
-    // 可排序菜单项 id → 标签/动作 (注意: 不能以 c 开头, c 前缀留给自定义应用 c0..cN)
-    String[] ORDER_ID={"home","app","sweep","shot","net"};   // 返回/最近已移除
+    // 一级菜单只负责导航，具体动作进入稳定的二级分组。
+    String[] ORDER_ID={"home","app","sweep","shot","net"};
+    static final int SUB_GO=0, SUB_TOOLS=1, SUB_APPS=2;
     void buildMenu(){
-        String saved=null;
-        try{ saved=getSharedPreferences("pf",0).getString("float_order",null); }catch(Exception e){}
-        java.util.List<String> ord=new java.util.ArrayList<String>();
-        if(saved!=null&&saved.length()>0){
-            String[] arr=saved.split(",");
-            for(String x:arr){ if(x!=null&&x.trim().length()>0) ord.add(x.trim()); }
-        }
-        for(String id:ORDER_ID){ if(!ord.contains(id)) ord.add(id); }
         final java.util.List<String> labs=new java.util.ArrayList<String>();
         final java.util.List<Runnable> acts=new java.util.ArrayList<Runnable>();
-        // 自定义应用统一收进二级"应用"菜单, 不在主环占位
-        java.util.List<String[]> customs=customList();
-        for(String id:ord){
-            if("close".equals(id)) continue;      // 关闭改到盘心
-            if("back".equals(id)||"recent".equals(id)) continue;   // 已移除的功能项(清旧prefs)
-            if(id.startsWith("c")) continue;      // 自定义项 → 二级菜单
-            String lb=labelOf(id);
-            if(lb==null) continue;
-            labs.add(lb);
-            acts.add(actOf(id));
-        }
-        if(customs.size()>0){
-            labs.add("📱 应用");
-            acts.add(new Runnable(){ public void run(){ openAppsSub(); } });
-        }
-        // 快捷动作(音量/静音/亮度/锁屏)统一收进二级"快捷"盘, 不占主环
-        boolean showQuick=true;
-        try{ showQuick=getSharedPreferences("pf",0).getBoolean("float_quick",true); }catch(Exception e){}
-        if(showQuick){
-            labs.add("🎛 快捷");
-            acts.add(new Runnable(){ public void run(){ openQuickSub(); } });
-        }
-        if(labs.size()>0) renderWheel(labs,acts);
-        Log.i("FloatBall","buildMenu wheel items="+labs.size()+" customs="+customs.size()+" order="+ord.toString());
+        labs.add("⌂ 前往"); acts.add(new Runnable(){public void run(){openGoSub();}});
+        labs.add("◇ 工具"); acts.add(new Runnable(){public void run(){openToolsSub();}});
+        labs.add("▦ 应用"); acts.add(new Runnable(){public void run(){openAppsSub();}});
+        renderWheel(labs,acts);
+        Log.i("FloatBall","buildMenu groups=go,tools,apps");
+    }
+    java.util.List<String> orderedGroup(String[] allowed){
+        java.util.List<String> out=new java.util.ArrayList<String>();
+        String saved=null; try{saved=getSharedPreferences("pf",0).getString("float_order",null);}catch(Exception e){}
+        if(saved!=null){ for(String id:saved.split(",")){ for(String ok:allowed){ if(ok.equals(id)&&!out.contains(id)) out.add(id); } } }
+        for(String id:allowed) if(!out.contains(id)) out.add(id);
+        return out;
     }
     String labelOf(String id){
-        if("back".equals(id)) return "◀ 返回";
-        if("home".equals(id)) return "● 主页";
-        if("app".equals(id)) return "🧰 打开主界面";
+        if("back".equals(id)) return "‹ 返回";
+        if("home".equals(id)) return "⌂ 主页";
+        if("app".equals(id)) return "◇ 工作台";
         if("recent".equals(id)) return "▦ 最近";
-        if("sweep".equals(id)) return "🧹 清理后台";
-        if("shot".equals(id)) return "📸 截图";
-        if("net".equals(id)) return "🔓 开网";
+        if("sweep".equals(id)) return "≋ 清理";
+        if("shot".equals(id)) return "▣ 截图";
+        if("net".equals(id)) return "↗ 开网";
         return null;
     }
     Runnable actOf(final String id){
@@ -918,22 +899,24 @@ public class FloatBallService extends Service {
             try{ wm.addView(sub,subLp); Log.i("FloatBall","apps sub disc added"); }catch(Exception e){ Log.e("FloatBall","add sub fail",e);}
         }catch(Exception e){ Log.e("FloatBall","createSub err",e); }
     }
-    void openAppsSub(){ openSub(0); }      // 二级: 我的应用
-    void openQuickSub(){ openSub(1); }     // 二级: 快捷动作
+    void openGoSub(){ openSub(SUB_GO); }
+    void openToolsSub(){ openSub(SUB_TOOLS); }
+    void openAppsSub(){ openSub(SUB_APPS); }
+    void openQuickSub(){ openToolsSub(); } // 兼容旧入口
     // ---------------- 快捷动作(二级盘, 依赖 Shizuku shell 权限) ----------------
     String[] QUICK_ID={"volup","voldown","mute","brightup","brightdown","lock"};
     String quickLabel(String id){
-        if("volup".equals(id)) return "🔊 音量+";
-        if("voldown".equals(id)) return "🔉 音量-";
-        if("mute".equals(id)) return "🔇 静音";
-        if("brightup".equals(id)) return "☀ 亮度+";
-        if("brightdown".equals(id)) return "🌥 亮度-";
-        if("lock".equals(id)) return "🔒 锁屏";
+        if("volup".equals(id)) return "+ 音量";
+        if("voldown".equals(id)) return "− 音量";
+        if("mute".equals(id)) return "× 静音";
+        if("brightup".equals(id)) return "+ 亮度";
+        if("brightdown".equals(id)) return "− 亮度";
+        if("lock".equals(id)) return "○ 锁屏";
         return id;
     }
     Runnable quickAct(final String id){
         return new Runnable(){ public void run(){
-            if(!ShizukuUtil.ready()){ toast("快捷动作需要 Shizuku：设置 → Shizuku 引导（复制启动命令）"); return; }
+            if(!ShizukuUtil.ready()){ toast("该动作需要 Shizuku：主界面 → 设备 → Shizuku"); return; }
             new Thread(new Runnable(){ public void run(){
                 try{
                     if("volup".equals(id)) ShizukuUtil.key(24);            // VOLUME_UP
@@ -951,63 +934,58 @@ public class FloatBallService extends Service {
         try{
             if(sub==null) createAppsSubWindow();
             if(sub==null) return;
-            final java.util.List<String[]> apps=(mode==0)?customList():new java.util.ArrayList<String[]>();
-            if(mode==0&&apps.size()==0){ toast("还没有添加应用：设置 → 悬浮球菜单排序 → ＋ 添加要打开的应用"); return; }
-            subMode=mode;
-            sub.removeAllViews();
-            int n=(mode==0)?apps.size():QUICK_ID.length;
-            int dq=discSize(); int cx=dq/2, cy=dq/2;
+            final java.util.List<String[]> apps=(mode==SUB_APPS)?customList():new java.util.ArrayList<String[]>();
+            if(mode==SUB_APPS&&apps.size()==0){ toast("尚未添加应用：主界面 → 控制 → 添加应用"); return; }
+            final java.util.List<String> tokens=new java.util.ArrayList<String>();
+            if(mode==SUB_GO) tokens.addAll(orderedGroup(new String[]{"home","app"}));
+            else if(mode==SUB_TOOLS){
+                tokens.addAll(orderedGroup(new String[]{"sweep","shot","net"}));
+                boolean quick=true; try{quick=getSharedPreferences("pf",0).getBoolean("float_quick",true);}catch(Exception e){}
+                if(quick) for(String q:QUICK_ID) tokens.add("q:"+q);
+            }
+            subMode=mode; sub.removeAllViews();
+            int n=(mode==SUB_APPS)?apps.size():tokens.size();
+            int dq=discSize(), cx=dq/2, cy=dq/2;
             int[] ring=ringFor(n); int itemD=ring[0], R=ring[1];
-            decorateDisc(sub,n,itemD,R);   // 与主轮盘同款分层美化
-            // 应用真实图标围成一圈
+            decorateDisc(sub,n,itemD,R);
             final Runnable[] acts=new Runnable[n];
             final Runnable[] longActs=new Runnable[n];
-            int tw2=labelBoxW(itemD,R,n), th2=itemD+dp(20);
-            int bias2=dp(6);
+            int tw2=labelBoxW(itemD,R,n), th2=itemD+dp(20), bias2=dp(6);
             for(int i=0;i<n;i++){
                 double ang=Math.toRadians(-90.0+360.0*i/n);
                 int px=cx+(int)Math.round((R+bias2)*Math.cos(ang))-tw2/2;
                 int py=cy+(int)Math.round((R+bias2)*Math.sin(ang))-th2/2;
-                final int ix=i;
-                View t;
-                if(mode==0){
-                    final String[] a=apps.get(i);
-                    t=appTile(a,i,itemD);
-                    acts[i]=new Runnable(){ public void run(){ hideSubNow(); launchApp(a[1]); } };
-                    longActs[i]=new Runnable(){ public void run(){ openManageApp(ix); } };
+                final int ix=i; View tile;
+                if(mode==SUB_APPS){
+                    final String[] a=apps.get(i); tile=appTile(a,i,itemD);
+                    acts[i]=new Runnable(){public void run(){hideSubNow(); launchApp(a[1]);}};
+                    longActs[i]=new Runnable(){public void run(){openManageApp(ix);}};
                 }else{
-                    final String qid=QUICK_ID[i];
-                    t=wheelTile(quickLabel(qid),quickAct(qid),itemD,false);
-                    acts[i]=new Runnable(){ public void run(){ hideSubNow(); quickAct(qid).run(); } };
+                    final String token=tokens.get(i);
+                    if(token.startsWith("q:")){
+                        final String qid=token.substring(2); tile=wheelTile(quickLabel(qid),quickAct(qid),itemD,false);
+                        acts[i]=new Runnable(){public void run(){hideSubNow(); quickAct(qid).run();}};
+                    }else{
+                        tile=wheelTile(labelOf(token),actOf(token),itemD,false);
+                        acts[i]=new Runnable(){public void run(){actOf(token).run();}};
+                    }
                 }
-                FrameLayout.LayoutParams flp=new FrameLayout.LayoutParams(tw2,th2);
-                flp.leftMargin=px; flp.topMargin=py;
-                sub.addView(t,flp);
+                FrameLayout.LayoutParams flp=new FrameLayout.LayoutParams(tw2,th2); flp.leftMargin=px; flp.topMargin=py; sub.addView(tile,flp);
             }
-            // 盘心: ‹ 返回主轮盘 (整块中间圆可点)
-            int cd=dp(74);
-            View back=wheelTile("‹ 返回",new Runnable(){ public void run(){ backToWheel(); } },cd,true);
-            FrameLayout.LayoutParams blp2=new FrameLayout.LayoutParams(cd,cd);
-            blp2.leftMargin=cx-cd/2; blp2.topMargin=cy-cd/2;
-            sub.addView(back,blp2);
-            // 外圈整块可点(按扇区) + 扇区长按=改名/移除 + 中间圆整块=返回
-            addDiscTouch(sub,n,itemD,R,new Runnable(){ public void run(){ backToWheel(); } },acts,longActs);
-            Log.i("FloatBall","sub disc mode="+mode+" n="+n);
-            // 下钻动画: 主轮盘缩小淡出 → 二级圆盘放大淡入
+            int cd=dp(74); View back=wheelTile("‹ 返回",new Runnable(){public void run(){backToWheel();}},cd,true);
+            FrameLayout.LayoutParams blp2=new FrameLayout.LayoutParams(cd,cd); blp2.leftMargin=cx-cd/2; blp2.topMargin=cy-cd/2; sub.addView(back,blp2);
+            addDiscTouch(sub,n,itemD,R,new Runnable(){public void run(){backToWheel();}},acts,longActs);
+            Log.i("FloatBall","sub mode="+mode+" items="+n);
             if(transitioning){ Log.i("FloatBall","transition busy"); return; }
             transitioning=true;
             if(menuVisible&&menu!=null){
-                menuVisible=false;
-                try{ menu.animate().cancel(); }catch(Exception e){}
+                menuVisible=false; try{menu.animate().cancel();}catch(Exception e){}
                 menu.animate().alpha(0f).scaleX(0.75f).scaleY(0.75f).setDuration(150)
-                    .setInterpolator(new android.view.animation.AccelerateInterpolator())
-                    .withEndAction(new Runnable(){ public void run(){
-                        try{ menu.setVisibility(View.GONE); }catch(Exception e){}
-                        menu.setAlpha(1f); menu.setScaleX(1f); menu.setScaleY(1f);
-                        showAppsSubIn();
+                    .setInterpolator(new android.view.animation.AccelerateInterpolator()).withEndAction(new Runnable(){public void run(){
+                        try{menu.setVisibility(View.GONE);}catch(Exception e){} menu.setAlpha(1f); menu.setScaleX(1f); menu.setScaleY(1f); showAppsSubIn();
                     }}).start();
             }else showAppsSubIn();
-        }catch(Exception e){ transitioning=false; Log.e("FloatBall","openAppsSub err",e); }
+        }catch(Exception e){transitioning=false; Log.e("FloatBall","openSub err",e);}
     }
     // 二级圆盘放大淡入
     void showAppsSubIn(){
