@@ -705,6 +705,7 @@ public class MainActivity extends Activity {
         network.addView(taskItem("网络守护",gd?"运行中":"已停止","被拦截时自动恢复联网",gd?UiStyle.ACCENT:UiStyle.TEXT_3,new Runnable(){public void run(){startGuard();}}));
         network.addView(taskItem("停止网络守护","手动停用","停用后不会在启动时自动拉起",UiStyle.DANGER,new Runnable(){public void run(){stopGuard();}}));
         network.addView(taskItem("上报域名拦截",vpn?(BlockVpnService.running?"已开启":"已暂停"):"未开启","仅阻止追踪域名，保留其它云服务",vpn?UiStyle.ACCENT:UiStyle.TEXT_3,new Runnable(){public void run(){toggleBlockVpn();}}));
+        network.addView(taskItem("导入 FlClash 覆写","复制并打开","FlClash 运行时接管相同的域名拦截规则",UiStyle.BLUE,new Runnable(){public void run(){FlClashOverride.showImportDialog(MainActivity.this);}}));
         network.addView(taskItem("防火墙 IP 拦截",fw?"已开启":"未开启","使用规则快照，可一键复原",fw?UiStyle.ACCENT:UiStyle.TEXT_3,new Runnable(){public void run(){toggleFwBlock();}}));
         network.addView(taskItem("规则管理","打开工具","增删、快照和恢复防火墙规则",UiStyle.BLUE,new Runnable(){public void run(){startActivity(new Intent(MainActivity.this,RulesActivity.class));}}));
         network.addView(taskItem("持续抑制监控",sup?"已开启":"未开启","强停卓越监控服务，需要 Lawnchair",sup?UiStyle.ACCENT:UiStyle.TEXT_3,new Runnable(){public void run(){toggleSuppressZy();}}));

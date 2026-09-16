@@ -37,7 +37,11 @@ public class ApkProvider extends ContentProvider {
         c.addRow(row);
         return c;
     }
-    public String getType(Uri u) { return "application/vnd.android.package-archive"; }
+    public String getType(Uri u) {
+        String name=u==null?null:u.getLastPathSegment();
+        if(name!=null&&name.toLowerCase().endsWith(".js")) return "application/javascript";
+        return "application/vnd.android.package-archive";
+    }
     public Uri insert(Uri u, ContentValues v) { return null; }
     public int delete(Uri u, String sel, String[] args) { return 0; }
     public int update(Uri u, ContentValues v, String sel, String[] args) { return 0; }
