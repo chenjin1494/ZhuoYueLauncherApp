@@ -68,7 +68,7 @@ public final class UiStyle {
 
     public static Drawable primaryButton(Context c) {
         GradientDrawable base = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{ACCENT_DARK, ACCENT});
+                new int[]{0xFF105746, 0xFF176F5C});
         base.setCornerRadius(dp(c, 6));
         GradientDrawable line = new GradientDrawable();
         line.setCornerRadius(dp(c, 6));
