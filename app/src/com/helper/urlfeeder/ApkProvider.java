@@ -40,6 +40,7 @@ public class ApkProvider extends ContentProvider {
     public String getType(Uri u) {
         String name=u==null?null:u.getLastPathSegment();
         if(name!=null&&name.toLowerCase().endsWith(".js")) return "application/javascript";
+        if(name!=null&&(name.toLowerCase().endsWith(".txt")||name.toLowerCase().endsWith(".log"))) return "text/plain";
         return "application/vnd.android.package-archive";
     }
     public Uri insert(Uri u, ContentValues v) { return null; }

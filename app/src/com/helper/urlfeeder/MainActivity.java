@@ -304,6 +304,7 @@ public class MainActivity extends Activity {
         boolean gd=prefs.getBoolean("guard_on",false); p.addView(statusLine("网络守护",gd?"运行中":"已停止",gd?UiStyle.ACCENT:UiStyle.TEXT_3));
         boolean ov=android.provider.Settings.canDrawOverlays(this); p.addView(statusLine("悬浮控制",ov?"已授权":"需要授权",ov?UiStyle.ACCENT:UiStyle.AMBER));
         p.addView(statusLine("默认浏览器",isDefaultBrowser()?"当前应用":"未设置",isDefaultBrowser()?UiStyle.ACCENT:UiStyle.TEXT_3));
+        p.addView(commandRow("查看状态总览","完整状态与诊断报告",UiStyle.BLUE,new Runnable(){public void run(){startActivity(new Intent(MainActivity.this,StatusActivity.class));}}));
         return p;
     }
     View statusLine(String key,String value,int tone){
@@ -733,6 +734,7 @@ public class MainActivity extends Activity {
     }
     void buildSystemTasks(LinearLayout body){
         LinearLayout diagnostics=taskGroup("诊断与记录","检查设备状态和本机操作历史");
+        diagnostics.addView(taskItem("状态总览","完整状态与报告","集中查看权限、服务、网络、系统关联和数据状态",UiStyle.ACCENT,new Runnable(){public void run(){startActivity(new Intent(MainActivity.this,StatusActivity.class));}}));
         diagnostics.addView(taskItem("设备自检","打开检查页","检测关键组件并提供修复入口",UiStyle.BLUE,new Runnable(){public void run(){openCheck();}}));
         diagnostics.addView(taskItem("审计日志","打开记录","筛选、复制、导出或清理",UiStyle.TEXT_2,new Runnable(){public void run(){startActivity(new Intent(MainActivity.this,AuditActivity.class));}}));
         diagnostics.addView(taskItem("关于应用","v"+Updater.myVersionName(this),"版本、开发者与功能说明",UiStyle.TEXT_2,new Runnable(){public void run(){openAbout();}}));
