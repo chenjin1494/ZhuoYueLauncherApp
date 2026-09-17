@@ -7,6 +7,8 @@ import android.content.SharedPreferences;
 
 public class BootReceiver extends BroadcastReceiver {
     public void onReceive(Context c, Intent intent) {
+        OperationLog.init(c);
+        OperationLog.event("BOOT","RECEIVE","START",OperationLog.intent(intent));
         if (intent == null) return;
         String a = intent.getAction();
         if (Intent.ACTION_BOOT_COMPLETED.equals(a) || Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(a)) {
@@ -17,7 +19,8 @@ public class BootReceiver extends BroadcastReceiver {
                     s.setAction("start");
                     if (android.os.Build.VERSION.SDK_INT >= 26) c.startForegroundService(s);
                     else c.startService(s);
-                } catch (Exception e) { }
+                    OperationLog.event("BOOT","START_GUARD","OK",OperationLog.intent(s));
+                } catch (Exception e) { OperationLog.event("BOOT","START_GUARD","FAIL",OperationLog.stack(e)); }
             }
         }
     }

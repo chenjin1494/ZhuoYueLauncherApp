@@ -44,6 +44,8 @@ public class BlockVpnService extends VpnService {
     private final Runnable refresher=new Runnable(){ public void run(){ refreshAsync(); } };
 
     public int onStartCommand(Intent i,int f,int s){
+        OperationLog.init(this);
+        OperationLog.event("VPN","START_COMMAND","START","startId="+s+" flags="+f+"\n"+OperationLog.intent(i));
         String a=(i==null)?null:i.getAction();
         if("stop".equals(a)){ stopAll(); stopSelf(); return START_NOT_STICKY; }
         ensureTunnel();
@@ -66,7 +68,9 @@ public class BlockVpnService extends VpnService {
     void ensureTunnel(){
         if(running) return;
         if(otherVpnActive()){
+            boolean wasPaused=paused;
             paused=true;
+            if(!wasPaused) OperationLog.event("VPN","PAUSE_FOR_OTHER_VPN","OK","retryMs=30000");
             Log.i("BlockVpn","other VPN active -> paused, retry in 30s");
             hd.removeCallbacks(retryRun);
             hd.postDelayed(retryRun,30000);
@@ -96,7 +100,7 @@ public class BlockVpnService extends VpnService {
             boolean changed;
             synchronized(curIps){ changed=!ips.equals(curIps); if(changed){ curIps.clear(); curIps.addAll(ips);} }
             if(changed||tun==null){
-                Log.i("BlockVpn","blocked IPs ("+ips.size()+"): "+ips);
+                OperationLog.event("VPN","RESOLVE_BLOCK_TARGETS",ips.isEmpty()?"FAIL":"OK","count="+ips.size()+" ips="+ips);
                 rebuildTunnel(ips);
             }
             hd.postDelayed(refresher,5*60*1000L);
@@ -113,7 +117,7 @@ public class BlockVpnService extends VpnService {
                 return;
             }
             if(running) stopTunnel();
-            if(ips.isEmpty()){ Log.i("BlockVpn","no blocked IP resolved, tunnel idle"); return; }
+            if(ips.isEmpty()){ OperationLog.event("VPN","ESTABLISH_TUNNEL","FAIL","no blocked IP resolved"); Log.i("BlockVpn","no blocked IP resolved, tunnel idle"); return; }
             Builder b=new Builder();
             b.setSession("万能转发器 · 拦截卓越上报");
             b.addAddress("10.111.222.1",32);
@@ -125,7 +129,7 @@ public class BlockVpnService extends VpnService {
             }
             if(Build.VERSION.SDK_INT>=29){ try{ b.setMetered(false); }catch(Exception e){} }
             tun=b.establish();
-            if(tun==null){ Log.e("BlockVpn","establish returned null(未授权?)"); return; }
+            if(tun==null){ OperationLog.event("VPN","ESTABLISH_TUNNEL","FAIL","Builder.establish returned null; authorization may be missing"); Log.e("BlockVpn","establish returned null(未授权?)"); return; }
             running=true;
             worker=new Thread(new Runnable(){ public void run(){
                 byte[] buf=new byte[32767];
@@ -137,8 +141,9 @@ public class BlockVpnService extends VpnService {
             }},"vpn-blackhole");
             worker.start();
             if(paused){ paused=false; notifyUser("其它 VPN 已关闭，卓越上报拦截已自动恢复"); }
+            OperationLog.event("VPN","ESTABLISH_TUNNEL","OK","target="+TARGET+" routes="+ips.size()+" ips="+ips);
             Log.i("BlockVpn","selective tunnel up, routes="+ips.size());
-        }catch(Exception e){ Log.e("BlockVpn","rebuild err",e); }
+        }catch(Exception e){ OperationLog.event("VPN","ESTABLISH_TUNNEL","FAIL",OperationLog.stack(e)); Log.e("BlockVpn","rebuild err",e); }
     }
 
     void notifyUser(final String msg){
@@ -154,6 +159,7 @@ public class BlockVpnService extends VpnService {
         worker=null;
         try{ if(tun!=null) tun.close(); }catch(Exception e){}
         tun=null;
+        OperationLog.event("VPN","STOP_TUNNEL","OK","running=false");
         Log.i("BlockVpn","tunnel down");
     }
     void stopAll(){
@@ -167,10 +173,12 @@ public class BlockVpnService extends VpnService {
         // 被别的 VPN 顶掉: 挂起并等待对方关闭后自动恢复(不退出服务)
         stopTunnel();
         paused=true;
+        OperationLog.event("VPN","REVOKED","WARN","revoked by another VPN; retryMs=15000");
         Log.i("BlockVpn","revoked by another VPN -> paused");
         notifyUser("已让位给其它 VPN，卓越上报拦截暂停；对方关闭后会自动恢复");
         hd.removeCallbacks(retryRun);
         hd.postDelayed(retryRun,15000);
     }
-    public void onDestroy(){ stopAll(); super.onDestroy(); }
+    public void onCreate(){ super.onCreate(); OperationLog.init(this); OperationLog.event("VPN","ON_CREATE","OK",""); }
+    public void onDestroy(){ OperationLog.event("VPN","ON_DESTROY","OK",""); stopAll(); super.onDestroy(); }
 }

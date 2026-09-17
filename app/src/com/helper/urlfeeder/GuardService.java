@@ -16,7 +16,7 @@ import android.content.pm.PackageManager;
 import android.os.IBinder;
 import android.os.Parcel;
 
-public class GuardService extends Service {
+public class GuardService extends LoggedService {
     static final String FW_PKG="cn.com.microtrust.firewall";
     static final String FW_IFACE="cn.com.microtrust.firewall.aidl.IAFWService";
     static final String FW_ACTION="cn.com.microtrust.firewall.IAFWService";
@@ -37,8 +37,9 @@ public class GuardService extends Service {
         public void onServiceConnected(ComponentName n,IBinder b){
             new Thread(new Runnable(){ public void run(){
                 String r="";
-                try{ r+=call(b,9,null)+" "; r+=call(b,10,null)+" "; r+=call(b,1,1)+" "; r+=call(b,11,null); }catch(Exception e){ r="ERR"; }
+                try{ r+=call(b,9,null)+" "; r+=call(b,10,null)+" "; r+=call(b,1,1)+" "; r+=call(b,11,null); }catch(Exception e){ r="ERR\n"+OperationLog.stack(e); }
                 final String fr=r;
+                OperationLog.event("FIREWALL","AUTO_OPEN_NETWORK","ERR".equals(r)?"FAIL":"OK","binderOutput="+r);
                 h.post(new Runnable(){ public void run(){ notif("已自动开网 ✓","防火墙规则已清空 ("+fr.trim()+")，无需手动点按"); schedule(CHECK_FAST); } });
                 try{ unbindService(fwConn); }catch(Exception e){}
             }}).start();
@@ -60,8 +61,10 @@ public class GuardService extends Service {
     }
 
     public int onStartCommand(Intent i,int flags,int sid){
+        OperationLog.event("GUARD","START_COMMAND","START","startId="+sid+" flags="+flags+"\n"+OperationLog.intent(i));
         String a=i==null?null:i.getAction();
         if("stop".equals(a)){
+            OperationLog.event("GUARD","STOP","OK","requested by start command");
             alive=false;
             prefs.edit().putBoolean("guard_on",false).commit();
             h.removeCallbacks(ticker);
@@ -70,6 +73,7 @@ public class GuardService extends Service {
             return START_NOT_STICKY;
         }
         prefs.edit().putBoolean("guard_on",true).commit();
+        OperationLog.event("GUARD","START","OK","alreadyAlive="+alive);
         if(!alive){
             alive=true;
             Intent open=new Intent(this,MainActivity.class);
@@ -128,6 +132,7 @@ public class GuardService extends Service {
                 }
             }catch(Exception e){}
             boolean ok=probe("www.bilibili.com",443)||probe("www.qq.com",443);
+            OperationLog.event("NETWORK","GUARD_PROBE",ok?"OK":"FAIL","durationMs="+(System.currentTimeMillis()-t0)+" targets=www.bilibili.com:443,www.qq.com:443");
             h.post(new Runnable(){ public void run(){
                 if(!alive) return;
                 checkShizukuState();
@@ -146,7 +151,7 @@ public class GuardService extends Service {
 
     void doOpenNet(){
         try{ Intent s=new Intent(FW_ACTION); s.setPackage(FW_PKG); bindService(s,fwConn,Context.BIND_AUTO_CREATE); }
-        catch(Exception e){ notif("自动开网失败","无法连接管控服务："+e.getMessage()); schedule(CHECK_SLOW); }
+        catch(Exception e){ OperationLog.event("FIREWALL","AUTO_OPEN_NETWORK","FAIL",OperationLog.stack(e)); notif("自动开网失败","无法连接管控服务："+e.getMessage()); schedule(CHECK_SLOW); }
     }
 
     boolean isDefaultBrowser(){
@@ -201,9 +206,10 @@ public class GuardService extends Service {
     void checkShizukuState(){
         try{
             boolean up=ShizukuUtil.running();
-            if(szState<0){ szState=up?1:0; android.util.Log.i("Guard","shizuku baseline="+szState); return; }
+            if(szState<0){ szState=up?1:0; OperationLog.event("SHIZUKU","GUARD_BASELINE","INFO","running="+up); android.util.Log.i("Guard","shizuku baseline="+szState); return; }
             if(szState==1&&!up){
                 szState=0;
+                OperationLog.event("SHIZUKU","GUARD_STATE_CHANGE","WARN","running=false");
                 if(System.currentTimeMillis()-lastSzNotify>60000){
                     lastSzNotify=System.currentTimeMillis();
                     notifSz("⚠ Shizuku 已掉线（需重新启动）",
@@ -213,6 +219,7 @@ public class GuardService extends Service {
             }else if(szState==0&&up){
                 szState=1;
                 boolean auth=ShizukuUtil.permission()==0;
+                OperationLog.event("SHIZUKU","GUARD_STATE_CHANGE","OK","running=true authorized="+auth);
                 notifSz("✓ Shizuku 已恢复",auth?"已授权，功能可正常使用":"已运行但未授权 → 点此在 App 内点「授权 Shizuku」");
                 android.util.Log.i("Guard","shizuku up notified auth="+auth);
             }

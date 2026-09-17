@@ -17,6 +17,8 @@ import moe.shizuku.server.IShizukuService;
  */
 public class ShizukuUtil {
     public static final int REQ_SHIZUKU = 1001;
+    private static volatile Boolean lastRunning;
+    private static volatile Integer lastPermission;
 
     static IShizukuService getService() throws RemoteException {
         IBinder b = rikka.shizuku.Shizuku.getBinder();
@@ -25,53 +27,132 @@ public class ShizukuUtil {
     }
 
     public static boolean running() {
-        try { return rikka.shizuku.Shizuku.pingBinder(); }
-        catch (Throwable t) { return false; }
+        boolean value = false;
+        Throwable error = null;
+        try { value = rikka.shizuku.Shizuku.pingBinder(); }
+        catch (Throwable t) { error = t; }
+        Boolean previous = lastRunning;
+        if (previous == null || previous.booleanValue() != value || error != null) {
+            lastRunning = Boolean.valueOf(value);
+            OperationLog.event("SHIZUKU", "BINDER_STATE", error == null ? "OK" : "FAIL",
+                    "running=" + value + (error == null ? "" : "\n" + OperationLog.stack(error)));
+        }
+        return value;
     }
 
     public static int permission() {
-        try { return rikka.shizuku.Shizuku.checkSelfPermission(); }
-        catch (Throwable t) { return 0; }
+        int value = -1;
+        Throwable error = null;
+        try { value = rikka.shizuku.Shizuku.checkSelfPermission(); }
+        catch (Throwable t) { error = t; }
+        Integer previous = lastPermission;
+        if (previous == null || previous.intValue() != value || error != null) {
+            lastPermission = Integer.valueOf(value);
+            OperationLog.event("SHIZUKU", "PERMISSION_STATE", error == null ? "OK" : "FAIL",
+                    "permissionResult=" + value + (error == null ? "" : "\n" + OperationLog.stack(error)));
+        }
+        return value;
     }
 
     /** 请求授权（需在 Activity 内调用；结果通过 Shizuku.addRequestPermissionResultListener 回调） */
     public static void requestPerm() {
-        try { rikka.shizuku.Shizuku.requestPermission(REQ_SHIZUKU); }
-        catch (Throwable t) { }
+        OperationLog.Span span = OperationLog.begin("SHIZUKU", "REQUEST_PERMISSION", "requestCode=" + REQ_SHIZUKU);
+        try {
+            rikka.shizuku.Shizuku.requestPermission(REQ_SHIZUKU);
+            OperationLog.result(span, "DISPATCHED", "request dispatched");
+        } catch (Throwable t) { OperationLog.fail(span, t); }
     }
 
-    /** 执行命令并返回退出码+输出；cmdArgs 例如 {"pm","disable-user","--user","0","pkg"} */
+    /** 执行命令并返回完整退出码、stdout 和 stderr。 */
     public static String run(String[] cmdArgs) {
-        StringBuilder sb = new StringBuilder();
-        IRemoteProcess p = null;
+        String command = OperationLog.command(cmdArgs);
+        OperationLog.Span span = OperationLog.begin("SHIZUKU", "RUN_COMMAND", "command=" + command);
+        IRemoteProcess process = null;
         try {
-            IShizukuService svc = getService();
-            // 3. newProcess(cmd, env, dir)
-            p = svc.newProcess(cmdArgs, null, null);
-            if (p == null) return "ERROR:null-process";
-            // 读输出(合并 stdout/stderr 分两步, 简化先读 stdout)
-            ParcelFileDescriptor out = p.getInputStream();
-            ParcelFileDescriptor err = p.getErrorStream();
-            if (out != null) {
-                FileInputStream fis = new FileInputStream(out.getFileDescriptor());
-                BufferedReader r = new BufferedReader(new InputStreamReader(fis));
-                String line;
-                while ((line = r.readLine()) != null) { sb.append(line).append("\n"); }
-                try { fis.close(); } catch (Exception e) {}
+            IShizukuService service = getService();
+            process = service.newProcess(cmdArgs, null, null);
+            if (process == null) {
+                String result = "ERROR:null-process";
+                OperationLog.fail(span, "command=" + command + "\n" + result);
+                return result;
             }
-            int code = p.waitFor();
-            if (err != null && sb.length() == 0) {
-                FileInputStream fis = new FileInputStream(err.getFileDescriptor());
-                BufferedReader r = new BufferedReader(new InputStreamReader(fis));
-                String line;
-                while ((line = r.readLine()) != null) { sb.append(line).append("\n"); }
-                try { fis.close(); } catch (Exception e) {}
+            final StringBuilder stdout = new StringBuilder();
+            final StringBuilder stderr = new StringBuilder();
+            ParcelFileDescriptor stdoutFd = process.getInputStream();
+            ParcelFileDescriptor stderrFd = process.getErrorStream();
+            Thread outReader = streamReader(stdoutFd, stdout, "shizuku-stdout");
+            Thread errReader = streamReader(stderrFd, stderr, "shizuku-stderr");
+            outReader.start(); errReader.start();
+            boolean interrupted = false;
+            int code = -1;
+            while (true) {
+                if (Thread.interrupted()) {
+                    interrupted = true;
+                    try { process.destroy(); } catch (Throwable ignored) {}
+                    try { if (stdoutFd != null) stdoutFd.close(); } catch (Exception ignored) {}
+                    try { if (stderrFd != null) stderrFd.close(); } catch (Exception ignored) {}
+                    break;
+                }
+                if (process.waitForTimeout(250L, java.util.concurrent.TimeUnit.MILLISECONDS.name())) {
+                    code = process.exitValue();
+                    break;
+                }
             }
-            sb.insert(0, "[exit=" + code + "] ");
-        } catch (Throwable t) {
-            sb.append("EXCEPTION: ").append(t);
+            interrupted = joinReaders(process, outReader, errReader, stdoutFd, stderrFd) || interrupted;
+            if (interrupted) Thread.currentThread().interrupt();
+            String result = "[exit=" + code + "]" + (interrupted ? "\n[interrupted=true]" : "") + "\n[stdout]\n" + stdout.toString()
+                    + (stdout.length() > 0 && stdout.charAt(stdout.length() - 1) != '\n' ? "\n" : "")
+                    + "[stderr]\n" + stderr.toString();
+            String detail = "command=" + command + "\n" + result;
+            if (interrupted) OperationLog.result(span, "INTERRUPTED", detail);
+            else if (code == 0) OperationLog.ok(span, detail); else OperationLog.fail(span, detail);
+            return result;
+        } catch (Throwable error) {
+            String result = "EXCEPTION: " + error;
+            OperationLog.fail(span, "command=" + command + "\n" + OperationLog.stack(error));
+            return result;
+        } finally {
+            if (process != null) try { process.destroy(); } catch (Throwable ignored) {}
         }
-        return sb.toString().trim();
+    }
+
+    private static boolean joinReaders(IRemoteProcess process, Thread stdout, Thread stderr,
+                                    ParcelFileDescriptor stdoutFd, ParcelFileDescriptor stderrFd) {
+        boolean interrupted = false;
+        while (stdout.isAlive() || stderr.isAlive()) {
+            try {
+                if (stdout.isAlive()) stdout.join();
+                if (stderr.isAlive()) stderr.join();
+            } catch (InterruptedException error) {
+                interrupted = true;
+                try { process.destroy(); } catch (Throwable ignored) {}
+                try { if (stdoutFd != null) stdoutFd.close(); } catch (Exception ignored) {}
+                try { if (stderrFd != null) stderrFd.close(); } catch (Exception ignored) {}
+            }
+        }
+        if (interrupted) Thread.currentThread().interrupt();
+        return interrupted;
+    }
+
+    private static Thread streamReader(final ParcelFileDescriptor descriptor, final StringBuilder target,
+                                       String name) {
+        return new Thread(new Runnable() { public void run() {
+            if (descriptor == null) return;
+            FileInputStream input = null;
+            BufferedReader reader = null;
+            try {
+                input = new FileInputStream(descriptor.getFileDescriptor());
+                reader = new BufferedReader(new InputStreamReader(input));
+                String line;
+                while ((line = reader.readLine()) != null) target.append(line).append('\n');
+            } catch (Throwable error) {
+                target.append("[读取输出失败: ").append(error).append("]\n");
+            } finally {
+                try { if (reader != null) reader.close(); else if (input != null) input.close(); }
+                catch (Exception ignored) {}
+                try { descriptor.close(); } catch (Exception ignored) {}
+            }
+        }}, name);
     }
 
     /** 便捷命令 */
@@ -109,9 +190,12 @@ public class ShizukuUtil {
     public static int brightnessGet() {
         try {
             String cur = sh("settings get system screen_brightness");
-            if (cur == null) return -1;
-            cur = cur.replace("[exit=0]", "").trim();
-            return Integer.parseInt(cur.trim());
+            if (cur == null || !cur.startsWith("[exit=0]")) return -1;
+            int begin = cur.indexOf("[stdout]");
+            int end = cur.indexOf("[stderr]");
+            if (begin < 0) return -1;
+            cur = cur.substring(begin + 8, end > begin ? end : cur.length()).trim();
+            return Integer.parseInt(cur);
         } catch (Throwable t) { return -1; }
     }
     /** 调节系统亮度: 读当前值 → 加减 → 限制到 [5,255] → 写回。返回写入后的亮度, 失败 -1 */

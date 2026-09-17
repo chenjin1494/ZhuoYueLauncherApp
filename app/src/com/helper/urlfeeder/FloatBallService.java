@@ -22,7 +22,7 @@ import android.widget.TextView;
  * 悬浮球导航：点悬浮球 → 屏幕中央弹出半透明圆形轮盘(类似 iOS 辅助触控)，
  * 功能项围绕一圈、中心 ✕ 收起；球本体吸附屏幕左右边缘可拖动。
  */
-public class FloatBallService extends Service {
+public class FloatBallService extends LoggedService {
     private WindowManager wm;
     private WindowManager.LayoutParams ballLp;
     private LinearLayout ball;
@@ -64,6 +64,7 @@ public class FloatBallService extends Service {
     public IBinder onBind(Intent i){ return null; }
 
     public int onStartCommand(Intent i,int f,int s){
+        OperationLog.event("FLOAT","START_COMMAND","START","startId="+s+" flags="+f+"\n"+OperationLog.intent(i));
         Log.i("FloatBall","onStartCommand ball="+(ball!=null)+" overlayOk="+FloatBallService.overlayOk(this));
         running=true; inst=this;
         try{
@@ -152,6 +153,7 @@ public class FloatBallService extends Service {
                             longFired=true; longPressShot=null;
                             if(pendingSingleTap!=null){ hd.removeCallbacks(pendingSingleTap); pendingSingleTap=null; }
                             lastTapUp=0;
+                            OperationLog.event("FLOAT","GESTURE_LONG_PRESS","OK","action=clear_background");
                             Log.i("FloatBall","ball long-press -> clear background");
                             clearBackground();
                         }};
@@ -177,6 +179,7 @@ public class FloatBallService extends Service {
                         if(dist<slop){
                             if(secondTap){
                                 pendingSingleTap=null; lastTapUp=0;
+                                OperationLog.event("FLOAT","GESTURE_DOUBLE_TAP","OK","action=screenshot");
                                 Log.i("FloatBall","ball double-tap -> shot");
                                 captureScreen();
                             }else{
@@ -184,9 +187,10 @@ public class FloatBallService extends Service {
                                 lastTapUp=System.currentTimeMillis();
                                 pendingSingleTap=new Runnable(){ public void run(){
                                     pendingSingleTap=null;
-                                    if(wasSub){ hideSubNow(); Log.i("FloatBall","tap close apps sub"); }
-                                    else if(wasMenu){ hideMenu(); Log.i("FloatBall","tap close menu"); }
+                                    if(wasSub){ OperationLog.event("FLOAT","GESTURE_SINGLE_TAP","OK","action=close_submenu"); hideSubNow(); Log.i("FloatBall","tap close apps sub"); }
+                                    else if(wasMenu){ OperationLog.event("FLOAT","GESTURE_SINGLE_TAP","OK","action=close_menu"); hideMenu(); Log.i("FloatBall","tap close menu"); }
                                     else if(!menuVisible && System.currentTimeMillis()-lastHide>=120){
+                                        OperationLog.event("FLOAT","GESTURE_SINGLE_TAP","OK","action=open_menu");
                                         menuVisible=true; showMenu(true); Log.i("FloatBall","tap open menu");
                                     }
                                 }};
@@ -194,6 +198,7 @@ public class FloatBallService extends Service {
                             }
                         }else{
                             if(secondTap){ pendingSingleTap=null; lastTapUp=0; }
+                            OperationLog.event("FLOAT","GESTURE_DRAG","OK","distance="+(int)dist+" x="+ballLp.x+" y="+ballLp.y);
                             snapBall(); Log.i("FloatBall","drag snap dist="+(int)dist);
                         }
                         return true;
@@ -202,7 +207,8 @@ public class FloatBallService extends Service {
             }
         });
         Log.i("FloatBall","add ball x="+ballLp.x+" y="+ballLp.y+" w="+w+" h="+h);
-        try{ wm.addView(ball,ballLp); Log.i("FloatBall","ball added OK"); }catch(Exception e){ Log.e("FloatBall","add ball fail",e);}
+        try{ wm.addView(ball,ballLp); OperationLog.event("FLOAT","ADD_OVERLAY","OK","x="+ballLp.x+" y="+ballLp.y+" size="+ballSz); Log.i("FloatBall","ball added OK"); }
+        catch(Exception e){ OperationLog.event("FLOAT","ADD_OVERLAY","FAIL",OperationLog.stack(e)); Log.e("FloatBall","add ball fail",e);}
 
         // 透明拦截屏: 放在球之上、盘之下 → 盘外点击只收起菜单, 不会误触到下层应用按钮
         try{
@@ -218,6 +224,7 @@ public class FloatBallService extends Service {
             scrim.setVisibility(View.GONE);
             scrim.setOnTouchListener(new View.OnTouchListener(){
                 public boolean onTouch(View v,android.view.MotionEvent e){
+                    OperationLog.event("FLOAT","OUTSIDE_TAP","OK","action=hide_menu");
                     Log.i("FloatBall","scrim tap -> hide");
                     hideMenu();
                     return true;
@@ -660,7 +667,11 @@ public class FloatBallService extends Service {
             if(!center) nv.setShadowLayer(Math.max(2,dp(2)),0,Math.max(1,dp(1)),0xCC000000);
             t.addView(nv);
         }
-        t.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ try{ act.run(); }catch(Exception e){} } });
+        t.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){
+            OperationLog.Span span=OperationLog.begin("FLOAT","MENU_ACTION","label="+label);
+            try{ act.run(); OperationLog.result(span,"DISPATCHED","handler returned"); }
+            catch(Throwable error){ OperationLog.fail(span,error); }
+        } });
         return t;
     }
     // 标签拆成 图标 + 名称 (空格分隔, 图标≤2码点; 否则整体当图标)

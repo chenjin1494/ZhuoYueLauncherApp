@@ -27,7 +27,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /** Full device-status overview with privacy-safe diagnostic report actions. */
-public class StatusActivity extends Activity {
+public class StatusActivity extends LoggedActivity {
     private static final int REQ_EXPORT_REPORT = 701;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final java.util.ArrayList<Button> reportActions = new java.util.ArrayList<Button>();
@@ -202,7 +202,7 @@ public class StatusActivity extends Activity {
             if (manager == null) throw new IllegalStateException("clipboard unavailable");
             manager.setPrimaryClip(ClipData.newPlainText("万能转发器诊断报告", DiagnosticReport.text(snapshot)));
             Toast.makeText(this, "诊断报告已复制", Toast.LENGTH_SHORT).show();
-            AuditLog.record(this, "DIAGNOSTIC", "OK", "诊断报告已复制");
+            OperationLog.event("DIAGNOSTIC", "COPY_REPORT", "OK", "诊断报告已复制");
         } catch (Exception e) { Toast.makeText(this, "复制诊断报告失败", Toast.LENGTH_LONG).show(); }
     }
 
@@ -229,10 +229,10 @@ public class StatusActivity extends Activity {
             public void run() {
                 try {
                     final String path = DiagnosticReport.export(StatusActivity.this, target);
-                    AuditLog.record(StatusActivity.this, "DIAGNOSTIC", "OK", "诊断报告已导出");
+                    OperationLog.event("DIAGNOSTIC", "EXPORT_REPORT", "OK", "path="+path);
                     postToast("诊断报告已导出\n" + path);
                 } catch (final Exception e) {
-                    AuditLog.record(StatusActivity.this, "DIAGNOSTIC", "FAIL", "诊断报告导出失败");
+                    OperationLog.event("DIAGNOSTIC", "EXPORT_REPORT", "FAIL", OperationLog.stack(e));
                     postToast("导出失败：" + e.getClass().getSimpleName());
                 }
             }
@@ -253,10 +253,10 @@ public class StatusActivity extends Activity {
         worker.execute(new Runnable() { public void run() {
             try {
                 DiagnosticReport.writeTextUri(StatusActivity.this, destination, reportText);
-                AuditLog.record(StatusActivity.this, "DIAGNOSTIC", "OK", "诊断报告已导出");
+                OperationLog.event("DIAGNOSTIC", "EXPORT_REPORT", "OK", "uri="+destination);
                 postToast("诊断报告已保存到所选位置");
             } catch (Exception e) {
-                AuditLog.record(StatusActivity.this, "DIAGNOSTIC", "FAIL", "诊断报告导出失败");
+                OperationLog.event("DIAGNOSTIC", "EXPORT_REPORT", "FAIL", OperationLog.stack(e));
                 postToast("导出失败：" + e.getClass().getSimpleName());
             }
         }});
@@ -280,7 +280,7 @@ public class StatusActivity extends Activity {
                         send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         send.setClipData(ClipData.newRawUri("诊断报告", uri));
                         startActivity(Intent.createChooser(send, "分享诊断报告"));
-                        AuditLog.record(StatusActivity.this, "DIAGNOSTIC", "OK", "诊断报告已打开分享面板");
+                        OperationLog.event("DIAGNOSTIC", "SHARE_REPORT", "OK", "uri="+uri);
                     } catch (Exception e) { Toast.makeText(StatusActivity.this, "无法打开分享面板", Toast.LENGTH_LONG).show(); }
                 }});
             } catch (Exception e) { postToast("生成分享文件失败"); }
@@ -317,10 +317,14 @@ public class StatusActivity extends Activity {
         panel.setPadding(dp(14), dp(12), dp(14), dp(12)); panel.setBackground(UiStyle.panel(this)); return panel;
     }
 
-    private Button action(String label, String description, View.OnClickListener listener) {
+    private Button action(String label, final String description, final View.OnClickListener listener) {
         Button button = new Button(this); button.setText(label); button.setTextSize(12); button.setTextColor(UiStyle.TEXT);
         button.setAllCaps(false); button.setGravity(Gravity.CENTER); button.setContentDescription(description);
-        button.setBackground(UiStyle.button(this, UiStyle.SURFACE_2)); button.setOnClickListener(listener); Fonts.apply(button); return button;
+        button.setBackground(UiStyle.button(this, UiStyle.SURFACE_2)); button.setOnClickListener(new View.OnClickListener() { public void onClick(View view) {
+            OperationLog.Span span=OperationLog.begin("UI","BUTTON_CLICK","activity=StatusActivity action="+description);
+            try { listener.onClick(view); OperationLog.result(span,"DISPATCHED","handler returned"); }
+            catch (Throwable error) { OperationLog.fail(span,error); if(error instanceof RuntimeException) throw (RuntimeException)error; if(error instanceof Error) throw (Error)error; throw new RuntimeException(error); }
+        }}); Fonts.apply(button); return button;
     }
 
     private LinearLayout.LayoutParams actionParams() {

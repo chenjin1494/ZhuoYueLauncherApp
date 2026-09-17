@@ -32,6 +32,7 @@ public class ShotAccessibilityService extends AccessibilityService {
     public static boolean capture(final Context ctx,final Runnable onDone){
         if(!ready()) return false;
         final ShotAccessibilityService s=inst;
+        final OperationLog.Span span=OperationLog.begin("SCREENSHOT","ACCESSIBILITY_CAPTURE","display="+Display.DEFAULT_DISPLAY);
         try{
             s.takeScreenshot(Display.DEFAULT_DISPLAY,s.getMainExecutor(),new TakeScreenshotCallback(){
                 public void onSuccess(ScreenshotResult r){
@@ -44,10 +45,12 @@ public class ShotAccessibilityService extends AccessibilityService {
                         try{ buf.close(); }catch(Exception e){}
                         if(sw!=null){
                             final String saved=ShotService.saveBitmap(ctx,sw);
+                            if(saved!=null) OperationLog.ok(span,"saved="+saved); else OperationLog.fail(span,"save returned null");
                             sw.recycle();
                             toast(ctx,saved!=null?("截图已保存到相册: "+saved):"截图保存失败");
-                        }else toast(ctx,"截图失败");
+                        }else { OperationLog.fail(span,"bitmap conversion returned null"); toast(ctx,"截图失败"); }
                     }catch(Exception e){
+                        OperationLog.fail(span,e);
                         Log.e("ShotA11y","save err",e);
                         toast(ctx,"截图失败: "+e.getClass().getSimpleName());
                     }finally{
@@ -55,6 +58,7 @@ public class ShotAccessibilityService extends AccessibilityService {
                     }
                 }
                 public void onFailure(int err){
+                    OperationLog.fail(span,"errorCode="+err);
                     Log.e("ShotA11y","takeScreenshot fail code="+err);
                     toast(ctx,"截图失败(错误码 "+err+")");
                     if(onDone!=null){ try{ onDone.run(); }catch(Exception e){} }
@@ -62,23 +66,27 @@ public class ShotAccessibilityService extends AccessibilityService {
             });
             return true;
         }catch(Exception e){
-            Log.e("ShotA11y","capture err",e);
+            OperationLog.fail(span,e);
             return false;
         }
     }
 
     public void onServiceConnected(){
         super.onServiceConnected();
+        OperationLog.init(this);
         inst=this;
+        OperationLog.event("SCREENSHOT","ACCESSIBILITY_CONNECTED","OK","ready="+ready());
         Log.i("ShotA11y","service connected, ready="+ready());
     }
     public void onAccessibilityEvent(AccessibilityEvent e){ /* 不处理事件, 仅用于截图能力 */ }
     public void onInterrupt(){}
     public boolean onUnbind(android.content.Intent i){
+        OperationLog.event("SCREENSHOT","ACCESSIBILITY_UNBIND","OK",OperationLog.intent(i));
         if(inst==this) inst=null;
         return super.onUnbind(i);
     }
     public void onDestroy(){
+        OperationLog.event("SCREENSHOT","ACCESSIBILITY_DESTROY","OK","");
         if(inst==this) inst=null;
         super.onDestroy();
     }

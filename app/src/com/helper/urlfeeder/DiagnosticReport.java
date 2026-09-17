@@ -195,11 +195,12 @@ public final class DiagnosticReport {
         out.add("数据与运行", "最近设置备份", backup == null ? "未找到" : formatTime(backup.lastModified()),
                 backup == null ? "应用专属备份目录中没有文件" : "已检测到应用专属备份，不导出文件名", backup == null ? WARN : OK);
 
-        List<AuditLog.Entry> audit = AuditLog.read(app, 2000);
+        List<AuditLog.Entry> audit = AuditLog.read(app, Integer.MAX_VALUE);
         int failures = 0;
         for (AuditLog.Entry entry : audit) {
             String result = entry.result == null ? "" : entry.result.toUpperCase(Locale.US);
-            if (result.contains("FAIL") || result.contains("ERROR") || result.contains("失败")) failures++;
+            if (result.contains("FAIL") || result.contains("ERROR") || result.contains("DENIED")
+                    || result.contains("INTERRUPTED") || result.contains("TIMED_OUT") || result.contains("失败")) failures++;
         }
         out.add("数据与运行", "审计日志", audit.size() + " 条，异常 " + failures + " 条",
                 "仅统计数量，不导出任何审计记录字段", failures > 0 ? WARN : INFO);

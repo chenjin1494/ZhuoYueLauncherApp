@@ -34,8 +34,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /** Programmatic viewer and export utility for {@link AuditLog}. */
-public class AuditActivity extends Activity {
-    private static final int MAX_RECORDS = 2000;
+public class AuditActivity extends LoggedActivity {
+    private static final int MAX_RECORDS = 5000;
     private static final String ALL = "全部分类";
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -78,7 +78,7 @@ public class AuditActivity extends Activity {
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
         titles.setPadding(dp(10), 0, dp(8), 0);
-        TextView title = text("审计日志", 18, UiStyle.TEXT);
+        TextView title = text("完整操作日志", 18, UiStyle.TEXT);
         title.setTypeface(Fonts.nerd(this), Typeface.BOLD);
         subtitle = text("正在读取…", 11, UiStyle.TEXT_3);
         titles.addView(title);
@@ -111,6 +111,9 @@ public class AuditActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(actionScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView privacy = text("完整 URL 可能含查询凭据/令牌；命令输出可能含个人、账户和系统数据，分享前请检查。", 11, UiStyle.AMBER);
+        privacy.setPadding(dp(4), 0, dp(4), dp(8));
+        root.addView(privacy);
 
         LinearLayout filters = new LinearLayout(this);
         filters.setGravity(Gravity.CENTER_VERTICAL);
@@ -199,7 +202,8 @@ public class AuditActivity extends Activity {
         StringBuilder output = new StringBuilder();
         for (AuditLog.Entry entry : entries) {
             if (!ALL.equals(selected) && !selected.equals(entry.category)) continue;
-            String haystack = (entry.category + "\n" + entry.result + "\n" + entry.detail)
+            String haystack = (entry.category + "\n" + entry.action + "\n" + entry.result + "\n"
+                    + entry.thread + "\n" + entry.durationMs + "\n" + entry.detail)
                     .toLowerCase(Locale.getDefault());
             if (needle.length() > 0 && !haystack.contains(needle)) continue;
             visible.add(entry);
@@ -207,7 +211,7 @@ public class AuditActivity extends Activity {
             output.append(entry.displayText());
         }
         body.setText(output.length() == 0 ? "没有匹配的审计记录" : output.toString());
-        subtitle.setText("显示 " + visible.size() + " 条 · 共读取 " + entries.size() + " 条");
+        subtitle.setText("显示 " + visible.size() + " 条 · 共读取 " + entries.size() + " 条 · 含动作/结果/耗时/线程/完整输出");
     }
 
     private void copyVisible() {
@@ -225,7 +229,8 @@ public class AuditActivity extends Activity {
             toast("剪贴板不可用");
             return;
         }
-        manager.setPrimaryClip(ClipData.newPlainText("audit log", text));
+        manager.setPrimaryClip(ClipData.newPlainText("operation log", text));
+        OperationLog.event("LOG","COPY_VISIBLE","OK","records="+visible.size());
         toast("已复制 " + visible.size() + " 条记录");
     }
 
@@ -235,8 +240,8 @@ public class AuditActivity extends Activity {
             public void run() {
                 String location = null;
                 String error = null;
-                try { location = AuditLog.export(AuditActivity.this); }
-                catch (Exception e) { error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(); }
+                try { location = AuditLog.export(AuditActivity.this); OperationLog.event("LOG","EXPORT","OK","location="+location); }
+                catch (Exception e) { error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(); OperationLog.event("LOG","EXPORT","FAIL",OperationLog.stack(e)); }
                 final String finalLocation = location;
                 final String finalError = error;
                 runOnUiThread(new Runnable() {
@@ -277,11 +282,11 @@ public class AuditActivity extends Activity {
                     public void run() {
                         if (stopped) return;
                         if (cleared) {
-                            entries.clear();
-                            rebuildCategories();
-                            render();
-                            toast("审计日志已清空");
+                            OperationLog.event("LOG","CLEAR","OK","previous records removed");
+                            load();
+                            toast("操作日志已清空，已保留本次清空记录");
                         } else {
+                            OperationLog.event("LOG","CLEAR","FAIL","AuditLog.clear returned false");
                             render();
                             toast("清空失败");
                         }
@@ -300,7 +305,7 @@ public class AuditActivity extends Activity {
         }
     }
 
-    private Button action(String label, String description, View.OnClickListener listener) {
+    private Button action(String label, final String description, final View.OnClickListener listener) {
         Button button = new Button(this);
         button.setText(label);
         button.setContentDescription(description);
@@ -313,7 +318,11 @@ public class AuditActivity extends Activity {
         button.setPadding(dp(12), 0, dp(12), 0);
         button.setMinHeight(dp(48));
         button.setBackground(UiStyle.button(this,UiStyle.SURFACE_2));
-        button.setOnClickListener(listener);
+        button.setOnClickListener(new View.OnClickListener() { public void onClick(View view) {
+            OperationLog.Span span=OperationLog.begin("UI","BUTTON_CLICK","activity=AuditActivity action="+description);
+            try { listener.onClick(view); OperationLog.result(span,"DISPATCHED","handler returned"); }
+            catch (Throwable error) { OperationLog.fail(span,error); if(error instanceof RuntimeException) throw (RuntimeException)error; if(error instanceof Error) throw (Error)error; throw new RuntimeException(error); }
+        }});
         Fonts.apply(button);
         return button;
     }

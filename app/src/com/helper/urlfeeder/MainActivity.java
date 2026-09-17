@@ -46,7 +46,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-public class MainActivity extends Activity {
+public class MainActivity extends LoggedActivity {
     static final String EXTRA_URL="extra_url";
     static final String FW_PKG="cn.com.microtrust.firewall";
     static final String FW_IFACE="cn.com.microtrust.firewall.aidl.IAFWService";
@@ -285,16 +285,21 @@ public class MainActivity extends Activity {
         panel.addView(commandRow("ADB 调试","打开 USB 调试入口",UiStyle.AMBER,new Runnable(){public void run(){openAdb();}}));
         return panel;
     }
+    void runUiAction(String label,Runnable action){
+        OperationLog.Span span=OperationLog.begin("UI","ACTION","activity=MainActivity label="+label);
+        try{ action.run(); OperationLog.result(span,"DISPATCHED","handler returned"); }
+        catch(Throwable error){ OperationLog.fail(span,error); if(error instanceof RuntimeException) throw (RuntimeException)error; if(error instanceof Error) throw (Error)error; throw new RuntimeException(error); }
+    }
     LinearLayout sectionPanel(String title,String subtitle){
         LinearLayout p=new LinearLayout(this); p.setOrientation(LinearLayout.VERTICAL); p.setPadding(dp(14),dp(13),dp(14),dp(14)); p.setBackground(UiStyle.panel(this));
         p.addView(uiText(title,15,UiStyle.TEXT,true)); TextView sub=uiText(subtitle,11,UiStyle.TEXT_3,false); sub.setPadding(0,0,0,dp(10)); p.addView(sub); return p;
     }
-    View commandRow(String title,String detail,int tone,final Runnable action){
+    View commandRow(final String title,String detail,int tone,final Runnable action){
         LinearLayout row=new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(12),dp(10),dp(10),dp(10)); row.setBackground(UiStyle.button(this,0xFF202B2E));
         TextView mark=uiText("●",12,tone,true); row.addView(mark,new LinearLayout.LayoutParams(dp(24),-2));
         LinearLayout words=new LinearLayout(this); words.setOrientation(LinearLayout.VERTICAL); words.addView(uiText(title,14,UiStyle.TEXT,true)); words.addView(uiText(detail,11,UiStyle.TEXT_3,false));
         row.addView(words,new LinearLayout.LayoutParams(0,-2,1f)); TextView go=uiText("›",24,UiStyle.TEXT_3,false); go.setGravity(Gravity.CENTER); row.addView(go,new LinearLayout.LayoutParams(dp(36),dp(40)));
-        row.setOnClickListener(new View.OnClickListener(){public void onClick(View v){action.run();}}); liquidFx(row);
+        row.setOnClickListener(new View.OnClickListener(){public void onClick(View v){runUiAction(title,action);}}); liquidFx(row);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(7); row.setLayoutParams(lp); return row;
     }
     View runtimePanel(){
@@ -519,8 +524,11 @@ public class MainActivity extends Activity {
     GradientDrawable shp(int r,int c){ GradientDrawable g=new GradientDrawable(); g.setCornerRadius(dp(Math.min(8,r))); g.setColor(c); g.setStroke(Math.max(1,dp(1)),UiStyle.STROKE_SOFT); return g; }
     GradientDrawable grad(int r,int[] cs){ GradientDrawable g=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,cs); g.setCornerRadius(dp(Math.min(8,r))); g.setStroke(dp(1),0x5542C8A5); return g; }
 
-    Btn gbtn(String t,Drawable bg,View.OnClickListener l){ Btn b=new Btn(this); b.setText(t); b.setTextSize(14); b.setAllCaps(false); b.setMinHeight(dp(48)); UiStyle.applyText(b,UiStyle.TEXT);
-        b.setBackground(bg); b.setPadding(dp(12),dp(13),dp(12),dp(13)); b.setOnClickListener(l);
+    Btn gbtn(final String t,Drawable bg,final View.OnClickListener l){ Btn b=new Btn(this); b.setText(t); b.setTextSize(14); b.setAllCaps(false); b.setMinHeight(dp(48)); UiStyle.applyText(b,UiStyle.TEXT);
+        b.setBackground(bg); b.setPadding(dp(12),dp(13),dp(12),dp(13)); b.setOnClickListener(new View.OnClickListener(){ public void onClick(View view){
+            OperationLog.Span span=OperationLog.begin("UI","BUTTON_CLICK","activity=MainActivity label="+t);
+            try{ l.onClick(view); OperationLog.result(span,"DISPATCHED","handler returned"); }catch(Throwable error){ OperationLog.fail(span,error); if(error instanceof RuntimeException) throw (RuntimeException)error; if(error instanceof Error) throw (Error)error; throw new RuntimeException(error); }
+        }});
         liquidFx(b);
         return b; }
 
@@ -614,7 +622,7 @@ public class MainActivity extends Activity {
         settingsBody.addView(secOpt("🧱 管控防火墙规则管理（增删·快照·恢复）",new Runnable(){public void run(){
             startActivity(new Intent(MainActivity.this,RulesActivity.class));
         }}));
-        settingsBody.addView(secOpt("🧾 本地审计日志（筛选·导出·清理）",new Runnable(){public void run(){
+        settingsBody.addView(secOpt("🧾 完整操作日志（筛选·复制·导出）",new Runnable(){public void run(){
             startActivity(new Intent(MainActivity.this,AuditActivity.class));
         }}));
         settingsBody.addView(secOpt(supOn?"🛑 持续抑制卓越监控：已开启 ✓（需 Lawnchair 桌面）":"🛑 持续抑制卓越监控（强停其监控服务·需 Shizuku）",
@@ -736,7 +744,7 @@ public class MainActivity extends Activity {
         LinearLayout diagnostics=taskGroup("诊断与记录","检查设备状态和本机操作历史");
         diagnostics.addView(taskItem("状态总览","完整状态与报告","集中查看权限、服务、网络、系统关联和数据状态",UiStyle.ACCENT,new Runnable(){public void run(){startActivity(new Intent(MainActivity.this,StatusActivity.class));}}));
         diagnostics.addView(taskItem("设备自检","打开检查页","检测关键组件并提供修复入口",UiStyle.BLUE,new Runnable(){public void run(){openCheck();}}));
-        diagnostics.addView(taskItem("审计日志","打开记录","筛选、复制、导出或清理",UiStyle.TEXT_2,new Runnable(){public void run(){startActivity(new Intent(MainActivity.this,AuditActivity.class));}}));
+        diagnostics.addView(taskItem("完整操作日志","打开记录","Activity、Intent、Shizuku、服务与命令完整输出",UiStyle.TEXT_2,new Runnable(){public void run(){startActivity(new Intent(MainActivity.this,AuditActivity.class));}}));
         diagnostics.addView(taskItem("关于应用","v"+Updater.myVersionName(this),"版本、开发者与功能说明",UiStyle.TEXT_2,new Runnable(){public void run(){openAbout();}}));
         body.addView(diagnostics);
 
@@ -765,18 +773,18 @@ public class MainActivity extends Activity {
     LinearLayout taskGroup(String title,String subtitle){
         LinearLayout box=sectionPanel(title,subtitle); return box;
     }
-    View taskItem(String title,String state,String detail,int tone,final Runnable action){
+    View taskItem(final String title,String state,String detail,int tone,final Runnable action){
         LinearLayout row=new LinearLayout(this); row.setOrientation(LinearLayout.VERTICAL); row.setPadding(dp(12),dp(9),dp(10),dp(9)); row.setBackground(UiStyle.button(this,0xFF202B2E));
         LinearLayout top=new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL); top.addView(uiText(title,14,UiStyle.TEXT,true),new LinearLayout.LayoutParams(0,-2,1f)); TextView sv=uiText(state,11,tone,true); sv.setGravity(Gravity.END); top.addView(sv); row.addView(top);
         TextView desc=uiText(detail,11,UiStyle.TEXT_3,false); desc.setPadding(0,dp(2),dp(24),0); row.addView(desc);
-        row.setOnClickListener(new View.OnClickListener(){public void onClick(View v){action.run();}}); liquidFx(row); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(6); row.setLayoutParams(lp); return row;
+        row.setOnClickListener(new View.OnClickListener(){public void onClick(View v){runUiAction(title,action);}}); liquidFx(row); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(6); row.setLayoutParams(lp); return row;
     }
     LinearLayout.LayoutParams sectionLp(){ LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(10); return lp; }
 
     TextView secTitle(String s){ TextView t=new TextView(this); t.setText(s); t.setTextSize(12); t.setAllCaps(false); UiStyle.applyText(t,UiStyle.ACCENT); t.setPadding(dp(4),dp(12),dp(4),dp(6)); return t; }
-    Btn secOpt(String label,final Runnable act){ Btn b=new Btn(this); b.setText(label); b.setTextSize(14); b.setAllCaps(false);
+    Btn secOpt(final String label,final Runnable act){ Btn b=new Btn(this); b.setText(label); b.setTextSize(14); b.setAllCaps(false);
         b.setMinHeight(dp(48)); b.setGravity(Gravity.START|Gravity.CENTER_VERTICAL); b.setPadding(dp(14),dp(10),dp(14),dp(10)); b.setBackground(UiStyle.panel(this,UiStyle.SURFACE)); UiStyle.applyText(b,UiStyle.TEXT);
-        b.setOnClickListener(new View.OnClickListener(){public void onClick(View v){act.run();}});
+        b.setOnClickListener(new View.OnClickListener(){public void onClick(View v){runUiAction(label,act);}});
         liquidFx(b);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.bottomMargin=dp(5); b.setLayoutParams(lp); return b; }
 
@@ -1022,7 +1030,9 @@ public class MainActivity extends Activity {
     }
     void selectTab(int idx){
         if(idx<0||idx>4) idx=0;
+        int previous=curTab;
         curTab=idx;
+        OperationLog.event("UI","SELECT_TAB","OK","from="+previous+" to="+idx+" reselected="+(previous==idx));
         if(idx>=2&&settingsBody!=null&&settingsBody.getChildCount()==0) buildSettings();
         TextView[] nav={tabWeb,tabApps,tabSet,tabControl,tabSystem};
         View[] pages={pageWeb,pageApps,pageSet,pageControl,pageSystem};
@@ -1510,8 +1520,8 @@ public class MainActivity extends Activity {
         if(Build.VERSION.SDK_INT>=33){
             try{
                 boolean has=checkSelfPermission("android.permission.POST_NOTIFICATIONS")==android.content.pm.PackageManager.PERMISSION_GRANTED;
-                if(!has){ pendingGuard=true; requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},77); return; }
-            }catch(Exception e){}
+                if(!has){ pendingGuard=true; OperationLog.event("PERMISSION","REQUEST","DISPATCHED","permission=android.permission.POST_NOTIFICATIONS requestCode=77 reason=start_guard"); requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},77); return; }
+            }catch(Exception e){ OperationLog.event("PERMISSION","REQUEST","FAIL",OperationLog.stack(e)); }
         }
         launchGuard();
     }
@@ -1564,7 +1574,7 @@ public class MainActivity extends Activity {
                 try{ for(java.net.InetAddress a:java.net.InetAddress.getAllByName(h)) ips.add(a.getHostAddress()); }catch(Exception e){}
             }
             int n=0;
-            for(String ip:ips){ FwRules.Res r=FwRules.addBlackRule(MainActivity.this,ip); if(r.good()) n++; }
+            for(String ip:ips){ FwRules.Res r=FwRules.addBlackRule(MainActivity.this,ip); if(r.applied()) n++; }
             FwRules.writeToFile(MainActivity.this);
             final int fn=n, fw=wht.data.size(), fb=blk.data.size();
             prefs.edit().putBoolean("fw_block_zy",true).putInt("fw_rule_count",fn).commit();
@@ -1993,6 +2003,7 @@ public class MainActivity extends Activity {
             runOnUiThread(new Runnable(){ public void run(){
                 allApps.clear(); allApps.addAll(tmp);
                 appsLoading=false; appsReady=true; appsDirty=true;
+                OperationLog.event("APP_LIST","LOAD","OK","count="+tmp.size()+" durationMs="+ms);
                 Log.i("AppsPage","loaded "+tmp.size()+" apps in "+ms+"ms (background)");
                 if(curTab==1) renderApps();
             }});
@@ -2032,7 +2043,9 @@ public class MainActivity extends Activity {
         Fonts.apply(c);
         appsList.addView(c);
         appsDirty=false;
-        Log.i("AppsPage","rendered "+shown+" rows in "+(System.currentTimeMillis()-t0)+"ms");
+        long renderMs=System.currentTimeMillis()-t0;
+        OperationLog.event("APP_LIST","RENDER","OK","shown="+shown+" total="+allApps.size()+" query="+q+" durationMs="+renderMs);
+        Log.i("AppsPage","rendered "+shown+" rows in "+renderMs+"ms");
     }
     void addAppRow(final AppEntry e,int idx){
              LinearLayout row=new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
@@ -2044,8 +2057,8 @@ public class MainActivity extends Activity {
         TextView pp=new TextView(this); pp.setText(e.pkg); pp.setTextSize(11); pp.setSingleLine(true); pp.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE); UiStyle.applyText(pp,UiStyle.TEXT_3);
         tx.addView(nn); tx.addView(pp);
         row.addView(tx,new LinearLayout.LayoutParams(0,-2,1f));
-        row.setOnClickListener(new View.OnClickListener(){public void onClick(View v){launch(e);}});
-        row.setOnLongClickListener(new View.OnLongClickListener(){public boolean onLongClick(View v){ showInfo(e); return true; }});
+        row.setOnClickListener(new View.OnClickListener(){public void onClick(View v){OperationLog.event("UI","APP_ROW_CLICK","DISPATCHED","label="+e.label+" package="+e.pkg); launch(e);}});
+        row.setOnLongClickListener(new View.OnLongClickListener(){public boolean onLongClick(View v){ OperationLog.event("UI","APP_ROW_LONG_PRESS","OK","label="+e.label+" package="+e.pkg); showInfo(e); return true; }});
         liquidFx(row);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); if(idx>0) lp.topMargin=dp(6);
         row.setLayoutParams(lp);
@@ -2269,7 +2282,7 @@ public class MainActivity extends Activity {
     }
     void addLog(String m){
         try{
-            AuditLog.record(this,"APP","INFO",m);
+            OperationLog.event("APP","RUN_MESSAGE","INFO",m);
             String ts=android.text.format.DateFormat.format("HH:mm:ss",new java.util.Date()).toString();
             String line="["+ts+"] "+m;
             logLines.add(line);
@@ -2339,7 +2352,7 @@ public class MainActivity extends Activity {
             d.setContentView(p,new android.widget.FrameLayout.LayoutParams(dp(320),-2));
             d.setCanceledOnTouchOutside(true);
             d.show();
-        }catch(Throwable x){ toast("无法显示详情"); }
+        }catch(Throwable x){ OperationLog.event("UI","SHOW_APP_INFO","FAIL","package="+e.pkg+"\n"+OperationLog.stack(x)); toast("无法显示详情"); }
     }
     void meta(LinearLayout p,String k,String v){
         if(v==null) v="—";

@@ -38,6 +38,8 @@ public class BgCleaner {
 
     /** 遍历所有可启动用户应用并结束后台进程。返回尝试处理的应用数(尽力而为)。 */
     public static int clear(Context c){
+        OperationLog.init(c);
+        OperationLog.Span span=OperationLog.begin("BACKGROUND","CLEAR_APPS","keep="+java.util.Arrays.toString(KEEP));
         int triedN=0;
         final List<String> tried=new ArrayList<String>();
         try{
@@ -58,7 +60,8 @@ public class BgCleaner {
             }
             triedN=tried.size();
             Log.i("BgCleaner","clear done: tried="+triedN+" pkgs="+tried.toString());
-        }catch(Exception e){ Log.e("BgCleaner","clear err",e); }
+            OperationLog.ok(span,"tried="+triedN+" packages="+tried);
+        }catch(Exception e){ OperationLog.fail(span,e); Log.e("BgCleaner","clear err",e); }
         return triedN;
     }
 }

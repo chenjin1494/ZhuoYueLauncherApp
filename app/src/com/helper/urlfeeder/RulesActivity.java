@@ -26,7 +26,7 @@ import java.util.List;
 import java.util.Set;
 
 /** A compact editor for the system firewall's IP/host rules. */
-public class RulesActivity extends Activity {
+public class RulesActivity extends LoggedActivity {
     private static final String PREFS = "pf";
     private static final String SNAP_BLACK = "rules_snap_black";
     private static final String SNAP_WHITE = "rules_snap_white";
@@ -436,7 +436,7 @@ public class RulesActivity extends Activity {
     }
 
     private void audit(String category, String result, String detail) {
-        try { AuditLog.record(this, category, result, detail); } catch (Throwable ignored) {}
+        try { OperationLog.event(category, "RULE_ACTION", result, detail); } catch (Throwable ignored) {}
     }
 
     private String errors(FwRules.Res black, FwRules.Res white) {
@@ -458,16 +458,16 @@ public class RulesActivity extends Activity {
         return view;
     }
 
-    private TextView action(String label, String description, View.OnClickListener listener) {
+    private TextView action(String label, final String description, final View.OnClickListener listener) {
         TextView view = text(label, 25, 0xFFF4F6F8);
         view.setGravity(Gravity.CENTER);
         view.setContentDescription(description);
         view.setBackground(selectableBackground(0x00000000));
-        view.setOnClickListener(listener);
+        view.setOnClickListener(loggedClick(description,listener));
         return view;
     }
 
-    private TextView compactButton(String label, int color, View.OnClickListener listener) {
+    private TextView compactButton(final String label, int color, final View.OnClickListener listener) {
         TextView view = text(label, 12, Color.WHITE);
         view.setGravity(Gravity.CENTER);
         view.setPadding(dp(9), 0, dp(9), 0);
@@ -475,8 +475,16 @@ public class RulesActivity extends Activity {
         view.setEllipsize(android.text.TextUtils.TruncateAt.END);
         view.setMinWidth(dp(48));
         view.setBackground(UiStyle.button(this,color));
-        view.setOnClickListener(listener);
+        view.setOnClickListener(loggedClick(label,listener));
         return view;
+    }
+
+    private View.OnClickListener loggedClick(final String action, final View.OnClickListener listener) {
+        return new View.OnClickListener() { public void onClick(View view) {
+            OperationLog.Span span=OperationLog.begin("UI","BUTTON_CLICK","activity=RulesActivity action="+action);
+            try { listener.onClick(view); OperationLog.result(span,"DISPATCHED","handler returned"); }
+            catch (Throwable error) { OperationLog.fail(span,error); if(error instanceof RuntimeException) throw (RuntimeException)error; if(error instanceof Error) throw (Error)error; throw new RuntimeException(error); }
+        }};
     }
 
     private TextView text(String value, float size, int color) {

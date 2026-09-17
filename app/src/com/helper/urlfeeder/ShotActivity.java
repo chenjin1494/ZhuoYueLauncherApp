@@ -12,7 +12,7 @@ import android.widget.Toast;
  * 悬浮球是 Service 无法直接申请 MediaProjection, 用它替代"把主界面拉到前台",
  * 用户只会看到系统授权框(首次), 授权后复用, 之后截图全程静默。
  */
-public class ShotActivity extends Activity {
+public class ShotActivity extends LoggedActivity {
     static final int REQ=90;
 
     protected void onCreate(Bundle b){

@@ -37,7 +37,7 @@ import java.util.Date;
  * 首次由 ShotActivity 取到授权后, 授权(投影+虚拟屏)会保留复用,
  * 之后截图只需以前台服务(mediaProjection 类型)运行即可, 不再弹授权框。
  */
-public class ShotService extends Service {
+public class ShotService extends LoggedService {
     static final int NOTI_ID=9001;
     static final String CH_ID="shot";
 
@@ -61,6 +61,7 @@ public class ShotService extends Service {
     public IBinder onBind(Intent i){ return null; }
 
     public int onStartCommand(Intent it,int f,int s){
+        OperationLog.event("SCREENSHOT","START_COMMAND","START","startId="+s+" flags="+f+"\n"+OperationLog.intent(it));
         startForegroundSafely();
         String act=(it==null)?null:it.getAction();
         try{
@@ -103,10 +104,12 @@ public class ShotService extends Service {
     }
 
     void grab(){
-        if(sBusy){ toast("正在截图…"); stopSelf(); return; }
+        if(sBusy){ OperationLog.event("SCREENSHOT","CAPTURE","SKIP","already busy"); toast("正在截图…"); stopSelf(); return; }
         sBusy=true;
+        final OperationLog.Span span=OperationLog.begin("SCREENSHOT","CAPTURE","projectionReady="+hasProjection()+" size="+sW+"x"+sH);
         new Thread(new Runnable(){ public void run(){
             boolean ok=false;
+            String outcome="capture failed";
             try{
                 Image img=null;
                 for(int i=0;i<16&&img==null;i++){
@@ -131,12 +134,15 @@ public class ShotService extends Service {
                 final String saved=save(bmp);
                 try{ bmp.recycle(); }catch(Exception e){}
                 ok=(saved!=null);
+                outcome=ok?("saved="+saved):"save returned null";
                 if(ok) toast("截图已保存到相册: "+saved);
                 else toast("截图保存失败");
             }catch(Exception e){
+                outcome=OperationLog.stack(e);
                 Log.e("Shot","capture err",e);
                 toast("截图失败: "+e.getClass().getSimpleName());
             }finally{
+                if(ok) OperationLog.ok(span,outcome); else OperationLog.fail(span,outcome);
                 releaseAll();                  // 用完即释放(前台服务停止时系统也会收回投影)
                 sBusy=false;
                 stopSelf();

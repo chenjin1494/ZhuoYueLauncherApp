@@ -52,6 +52,7 @@ public class Updater {
 
     /** 下载到 out；返回 null 表示成功，否则返回错误说明 */
     static String httpGet(String url, File out) {
+        OperationLog.Span span=OperationLog.begin("UPDATE","HTTP_DOWNLOAD","url="+url+" destination="+out.getAbsolutePath());
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(url).openConnection();
@@ -61,8 +62,9 @@ public class Updater {
             c.setRequestProperty("User-Agent", "urlfeeder-updater");
             int code = c.getResponseCode();
             if (code != 200) {
-                if (code == 404) return "HTTP 404：仓库还没有可下载的 Release（需先让 CI 构建一次）";
-                return "HTTP " + code;
+                String error=code == 404 ? "HTTP 404：仓库还没有可下载的 Release（需先让 CI 构建一次）" : "HTTP " + code;
+                OperationLog.fail(span,"url="+url+" "+error);
+                return error;
             }
             InputStream in = c.getInputStream();
             FileOutputStream fo = new FileOutputStream(out);
@@ -71,9 +73,11 @@ public class Updater {
             while ((n = in.read(b)) > 0) { fo.write(b, 0, n); total += n; }
             try { fo.flush(); fo.close(); } catch (Exception e) {}
             try { in.close(); } catch (Exception e) {}
-            if (total < 1024) return "下载内容过小(" + total + " 字节)";
+            if (total < 1024) { String error="下载内容过小(" + total + " 字节)"; OperationLog.fail(span,error); return error; }
+            OperationLog.ok(span,"http=200 bytes="+total);
             return null;
         } catch (Throwable t) {
+            OperationLog.fail(span,t);
             return "网络错误: " + t;
         } finally {
             if (c != null) try { c.disconnect(); } catch (Exception e) {}
@@ -83,6 +87,7 @@ public class Updater {
     /** 检查更新：后台按顺序尝试下载地址 → 比对版本 → 主线程弹窗询问是否安装 */
     public static void checkAndPrompt(final Activity act) { checkAndPrompt(act, null); }
     public static void checkAndPrompt(final Activity act, final Cb cb) {
+        OperationLog.event("UPDATE","CHECK","START","currentVersion="+myVersionName(act)+"("+myVersionCode(act)+")");
         Toast.makeText(act, "正在检查更新…", Toast.LENGTH_SHORT).show();
         new Thread(new Runnable() { public void run() {
             final File tmp = new File(act.getCacheDir(), FILE_NAME + ".tmp");
@@ -120,6 +125,7 @@ public class Updater {
                             if (!tmp.renameTo(dst)) { err = "缓存文件写入失败"; }
                             else {
                                 final String nn = nvn;
+                                OperationLog.event("UPDATE","CHECK","OK","updateAvailable=true remote="+nvn+"("+nv+") local="+mvn+"("+mv+")");
                                 act.runOnUiThread(new Runnable() { public void run() { promptInstall(act, dst, nn, mvn); } });
                                 return;
                             }
@@ -129,6 +135,7 @@ public class Updater {
             }
             try { tmp.delete(); } catch (Exception e) {}
             final String m = err == null ? "检查失败" : err;
+            OperationLog.event("UPDATE","CHECK",got?"INFO":"FAIL",m);
             if (cb != null) cb.log("检查更新结果: " + m);
             act.runOnUiThread(new Runnable() { public void run() {
                 Toast.makeText(act, m, Toast.LENGTH_LONG).show();
@@ -165,6 +172,7 @@ public class Updater {
     }
 
     static void promptInstall(final Activity act, final File apk, final String nvn, final String mvn) {
+        OperationLog.event("UPDATE","INSTALL_PROMPT","START","remote="+nvn+" local="+mvn);
         try {
             new AlertDialog.Builder(act)
                 .setTitle("发现新版本 v" + nvn)
@@ -172,14 +180,20 @@ public class Updater {
                           + "· 升级不会清空设置（同签名覆盖安装）\n"
                           + "· 若提示“未知来源”，请允许本应用安装应用")
                 .setPositiveButton("立即安装", new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface d, int w) { install(act, apk); }
+                    public void onClick(DialogInterface d, int w) { OperationLog.event("UPDATE","INSTALL_PROMPT","OK","choice=install"); install(act, apk); }
                 })
-                .setNegativeButton("以后再说", null)
+                .setNegativeButton("以后再说", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface d, int w) { OperationLog.event("UPDATE","INSTALL_PROMPT","CANCELED","choice=later"); }
+                })
+                .setOnCancelListener(new DialogInterface.OnCancelListener() {
+                    public void onCancel(DialogInterface d) { OperationLog.event("UPDATE","INSTALL_PROMPT","CANCELED","choice=outside_or_back"); }
+                })
                 .show();
-        } catch (Throwable t) { Toast.makeText(act, "提示失败: " + t, Toast.LENGTH_LONG).show(); }
+        } catch (Throwable t) { OperationLog.event("UPDATE","INSTALL_PROMPT","FAIL",OperationLog.stack(t)); Toast.makeText(act, "提示失败: " + t, Toast.LENGTH_LONG).show(); }
     }
 
     public static void install(Activity act, File apk) {
+        OperationLog.Span span=OperationLog.begin("UPDATE","START_INSTALL","apk="+apk.getAbsolutePath()+" bytes="+apk.length());
         try {
             if (Build.VERSION.SDK_INT >= 26 && !act.getPackageManager().canRequestPackageInstalls()) {
                 Toast.makeText(act, "请先允许「安装未知应用」，再回来重新点检查更新", Toast.LENGTH_LONG).show();
@@ -187,6 +201,7 @@ public class Updater {
                     act.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                         Uri.parse("package:" + act.getPackageName())));
                 } catch (Exception e) {}
+                OperationLog.fail(span,"REQUEST_INSTALL_PACKAGES permission missing; settings opened");
                 return;
             }
             Uri u = Uri.parse("content://" + AUTHORITY + "/" + apk.getName());
@@ -194,7 +209,9 @@ public class Updater {
             i.setDataAndType(u, "application/vnd.android.package-archive");
             i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
             act.startActivity(i);
+            OperationLog.result(span,"DISPATCHED","installer intent dispatched");
         } catch (Throwable t) {
+            OperationLog.fail(span,t);
             Toast.makeText(act, "安装启动失败: " + t, Toast.LENGTH_LONG).show();
         }
     }

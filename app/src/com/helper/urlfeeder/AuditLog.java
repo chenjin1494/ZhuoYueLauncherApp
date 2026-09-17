@@ -25,48 +25,68 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Small, process-thread-safe audit trail stored in the app's internal files. */
 public final class AuditLog {
     private static final String TAG = "AuditLog";
     private static final String FILE_NAME = "audit.log";
-    private static final long ROTATE_BYTES = 512L * 1024L;
-    private static final int KEEP_BYTES = 384 * 1024;
+    private static final long ROTATE_BYTES = 8L * 1024L * 1024L;
+    private static final int KEEP_BYTES = 6 * 1024 * 1024;
     private static final Object LOCK = new Object();
+    private static final AtomicLong SEQUENCE = new AtomicLong(System.currentTimeMillis());
 
     private AuditLog() {}
 
     public static final class Entry {
         public final long timestamp;
+        public final long sequence;
         public final String category;
+        public final String action;
         public final String result;
+        public final long durationMs;
+        public final String thread;
         public final String detail;
 
-        Entry(long timestamp, String category, String result, String detail) {
+        Entry(long timestamp, long sequence, String category, String action, String result,
+              long durationMs, String thread, String detail) {
             this.timestamp = timestamp;
+            this.sequence = sequence;
             this.category = category;
+            this.action = action;
             this.result = result;
+            this.durationMs = durationMs;
+            this.thread = thread;
             this.detail = detail;
         }
 
         public String displayTime() {
-            return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+            return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
                     .format(new Date(timestamp));
         }
 
         public String displayText() {
-            return displayTime() + "  [" + category + "] " + result + "\n" + detail;
+            StringBuilder out = new StringBuilder();
+            out.append(displayTime()).append("  #").append(sequence).append("  [").append(category);
+            if (action.length() > 0) out.append('/').append(action);
+            out.append("] ").append(result);
+            if (durationMs >= 0) out.append("  ").append(durationMs).append(" ms");
+            if (thread.length() > 0) out.append("  {").append(thread).append('}');
+            if (detail.length() > 0) out.append('\n').append(detail);
+            return out.toString();
         }
     }
 
-    /** Appends one sanitized record. Logging failures are reported through the return value. */
-    public static boolean append(Context context, String category, String result, String detail) {
+    /** Appends one structured operation record. */
+    public static boolean operation(Context context, String category, String action, String result,
+                                    long durationMs, String detail) {
         if (context == null) return false;
         synchronized (LOCK) {
             FileOutputStream out = null;
             try {
                 File file = logFile(context);
-                byte[] record = encode(System.currentTimeMillis(), category, result, detail);
+                byte[] record = encode(System.currentTimeMillis(), SEQUENCE.incrementAndGet(),
+                        category, action, result, durationMs, Thread.currentThread().getName(), detail);
                 if (file.length() + record.length > ROTATE_BYTES) rotate(file);
                 out = new FileOutputStream(file, true);
                 out.write(record);
@@ -79,6 +99,11 @@ public final class AuditLog {
                 closeQuietly(out);
             }
         }
+    }
+
+    /** Appends a compatibility event record. */
+    public static boolean append(Context context, String category, String result, String detail) {
+        return operation(context, category, "EVENT", result, -1L, detail);
     }
 
     /** Semantic alias used by operation code. */
@@ -126,10 +151,10 @@ public final class AuditLog {
         if (context == null) throw new IOException("context is null");
         final byte[] data;
         synchronized (LOCK) {
-            data = readBytes(logFile(context));
+            data = renderExport(logFile(context)).getBytes("UTF-8");
         }
         String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
-        String name = "audit_" + stamp + ".log";
+        String name = "operation_log_" + stamp + ".log";
         if (Build.VERSION.SDK_INT >= 29) {
             try {
                 return exportMediaStore(context, name, data);
@@ -150,26 +175,61 @@ public final class AuditLog {
         return new File(context.getApplicationContext().getFilesDir(), FILE_NAME);
     }
 
-    private static byte[] encode(long timestamp, String category, String result, String detail)
+    private static byte[] encode(long timestamp, long sequence, String category, String action,
+                                 String result, long durationMs, String thread, String detail)
             throws IOException {
-        String line = timestamp + "\t" + clean(category) + "\t" + clean(result) + "\t"
-                + clean(detail) + "\n";
+        String line = "v2\t" + timestamp + "\t" + sequence + "\t" + escape(category) + "\t"
+                + escape(action) + "\t" + escape(result) + "\t" + durationMs + "\t"
+                + escape(thread) + "\t" + escape(detail) + "\n";
         return line.getBytes("UTF-8");
     }
 
-    private static String clean(String value) {
+    private static String cleanLegacy(String value) {
         if (value == null) return "";
         return value.replace('\t', ' ').replace('\r', ' ').replace('\n', ' ');
     }
 
+    private static String escape(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\").replace("\t", "\\t")
+                .replace("\r", "\\r").replace("\n", "\\n");
+    }
+
+    private static String unescape(String value) {
+        if (value == null || value.indexOf('\\') < 0) return value == null ? "" : value;
+        StringBuilder out = new StringBuilder(value.length());
+        boolean escaped = false;
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (!escaped) {
+                if (ch == '\\') escaped = true; else out.append(ch);
+            } else {
+                if (ch == 'n') out.append('\n');
+                else if (ch == 'r') out.append('\r');
+                else if (ch == 't') out.append('\t');
+                else out.append(ch);
+                escaped = false;
+            }
+        }
+        if (escaped) out.append('\\');
+        return out.toString();
+    }
+
     private static Entry parse(String line) {
         String[] fields = line.split("\t", -1);
-        if (fields.length != 4) return null;
         try {
-            return new Entry(Long.parseLong(fields[0]), fields[1], fields[2], fields[3]);
-        } catch (NumberFormatException e) {
-            return null;
-        }
+            if (fields.length == 9 && "v2".equals(fields[0])) {
+                return new Entry(Long.parseLong(fields[1]), Long.parseLong(fields[2]),
+                        unescape(fields[3]), unescape(fields[4]), unescape(fields[5]),
+                        Long.parseLong(fields[6]), unescape(fields[7]), unescape(fields[8]));
+            }
+            if (fields.length == 4) {
+                long timestamp = Long.parseLong(fields[0]);
+                return new Entry(timestamp, timestamp, fields[1], "LEGACY", fields[2],
+                        -1L, "", cleanLegacy(fields[3]));
+            }
+        } catch (NumberFormatException ignored) {}
+        return null;
     }
 
     private static void rotate(File file) throws IOException {
@@ -210,6 +270,31 @@ public final class AuditLog {
         }
     }
 
+    private static String renderExport(File file) throws IOException {
+        ArrayList<String> records=new ArrayList<String>();
+        int corrupt=0;
+        BufferedReader reader=null;
+        try{
+            if(file.isFile()){
+                reader=new BufferedReader(new InputStreamReader(new FileInputStream(file),"UTF-8"));
+                String line;
+                while((line=reader.readLine())!=null){
+                    Entry entry=parse(line);
+                    if(entry!=null) records.add(entry.displayText());
+                    else { corrupt++; records.add("[CORRUPT_RAW_RECORD]\n"+line); }
+                }
+            }
+        }finally{ closeQuietly(reader); }
+        StringBuilder text=new StringBuilder();
+        text.append("万能转发器 完整操作日志\n");
+        text.append("导出时间：").append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS",Locale.getDefault()).format(new Date())).append('\n');
+        text.append("格式：时间 #序号 [分类/动作] 结果 耗时 {线程}\n");
+        text.append("敏感信息提示：完整 URL 可能含查询凭据或令牌；命令和输出可能含个人数据、账户信息及系统数据。\n");
+        text.append("记录数：").append(records.size()).append("（最新在前）；保留的异常原始记录：").append(corrupt).append('\n');
+        for(int i=records.size()-1;i>=0;i--) text.append("\n────────────────────────\n").append(records.get(i)).append('\n');
+        return text.toString();
+    }
+
     private static byte[] readBytes(File file) throws IOException {
         if (!file.isFile()) return new byte[0];
         FileInputStream in = null;
@@ -231,32 +316,33 @@ public final class AuditLog {
         ContentValues values = new ContentValues();
         values.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
         values.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
-        values.put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/万能转发器备份");
+        values.put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/万能转发器日志");
         values.put(MediaStore.MediaColumns.IS_PENDING, 1);
         Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
         if (uri == null) throw new IOException("could not create download");
         OutputStream out = null;
-        boolean complete = false;
+        boolean published = false;
         try {
             out = resolver.openOutputStream(uri, "w");
             if (out == null) throw new IOException("could not open download");
             out.write(data);
             out.flush();
-            complete = true;
+            closeQuietly(out); out=null;
+            ContentValues ready = new ContentValues();
+            ready.put(MediaStore.MediaColumns.IS_PENDING, 0);
+            if(resolver.update(uri, ready, null, null)!=1) throw new IOException("could not publish download");
+            published=true;
+            return "Download/万能转发器日志/" + name;
         } finally {
             closeQuietly(out);
-            if (!complete) resolver.delete(uri, null, null);
+            if (!published) resolver.delete(uri, null, null);
         }
-        ContentValues ready = new ContentValues();
-        ready.put(MediaStore.MediaColumns.IS_PENDING, 0);
-        resolver.update(uri, ready, null, null);
-        return "Download/万能转发器备份/" + name;
     }
 
     private static String exportAppExternal(Context context, String name, byte[] data) throws IOException {
         File root = context.getExternalFilesDir(null);
         if (root == null) throw new IOException("external files directory unavailable");
-        File dir = new File(root, "backup");
+        File dir = new File(root, "logs");
         if (!dir.exists() && !dir.mkdirs()) throw new IOException("could not create backup directory");
         File file = new File(dir, name);
         FileOutputStream out = null;

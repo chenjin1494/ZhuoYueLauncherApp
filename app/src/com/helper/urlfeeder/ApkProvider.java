@@ -20,11 +20,12 @@ public class ApkProvider extends ContentProvider {
 
     public static final String AUTHORITY = Updater.AUTHORITY;
 
-    public boolean onCreate() { return true; }
+    public boolean onCreate() { OperationLog.init(getContext()); OperationLog.event("PROVIDER","CREATE","OK","authority="+AUTHORITY); return true; }
 
     public Cursor query(Uri u, String[] proj, String sel, String[] args, String sort) {
         String name = u.getLastPathSegment();
         File f = safeFile(name);
+        OperationLog.event("PROVIDER","QUERY",f!=null&&f.exists()?"OK":"FAIL","uri="+u+" file="+name+" exists="+(f!=null&&f.exists()));
         String[] cols = (proj == null || proj.length == 0)
             ? new String[]{OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE} : proj;
         MatrixCursor c = new MatrixCursor(cols, 1);
@@ -54,8 +55,9 @@ public class ApkProvider extends ContentProvider {
 
     public ParcelFileDescriptor openFile(Uri u, String mode) throws FileNotFoundException {
         File f = safeFile(u.getLastPathSegment());
-        if (f == null) throw new FileNotFoundException("bad name");
-        if (!f.exists()) throw new FileNotFoundException(u.getLastPathSegment());
+        if (f == null) { OperationLog.event("PROVIDER","OPEN_FILE","FAIL","uri="+u+" mode="+mode+" reason=bad_name"); throw new FileNotFoundException("bad name"); }
+        if (!f.exists()) { OperationLog.event("PROVIDER","OPEN_FILE","FAIL","uri="+u+" mode="+mode+" reason=missing"); throw new FileNotFoundException(u.getLastPathSegment()); }
+        OperationLog.event("PROVIDER","OPEN_FILE","OK","uri="+u+" mode="+mode+" bytes="+f.length());
         return ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY);
     }
 }
