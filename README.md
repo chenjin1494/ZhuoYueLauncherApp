@@ -1,3 +1,5 @@
+首先进入恢复模式将设备回复至出厂模式，从飞行模式的漏洞进入原生设置，打开开发者模式与 adb，通过 adb insall 安装这个应用程序即可正常使用
+
 # 万能转发器（ZhuoYue UrlFeeder）
 
 面向 Lenovo TB337FC 学习平板（ZUI16 / Android 13）的本地工具 App。
